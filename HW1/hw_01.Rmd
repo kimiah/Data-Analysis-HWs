@@ -1,0 +1,361 @@
+---
+title: "first week: Introduction to R and Rstudio"
+author: "Kimia Hamidieh - 95109434"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/Rman.jpeg"  align = 'center'>
+</div>
+
+
+<h1 dir="RTL"> 
+تمرین سری اول: چند مساله
+</h1>
+
+<p dir="RTL"> 
+به سوال های زیر را از طریق نوشتن یک کد پاسخ دهید.
+</p>
+
+***
+
+<h2 dir="RTL">
+ماتریس دوستانه
+</h2>
+
+<p dir="RTL">
+یک ماتریس
+$(n,n)$
+که شامل اعداد 
+$1,2,...,n^2$
+است. دوستانه نامیده میشود اگر مجموع سطرها با مجموع ستون های آن برابر شوند. مثال هایی از ماتریس های دوستانه از بعد ۴و۵و۶ ارایه دهید. 
+</p>
+
+<p dir="RTL">
+با کمی جستوجو به دست آمد که مربعهای توصیف شده از صورت سوال، زیرمجموعه ای به نام مربعهای جادویی دارند که الگوریتم ساخت آنها از اندازه های مختلف در کتابخانهی magic پیاده سازی شدهاست. تنها کافی است ابتدا این پکیج را نصب کنیم.
+
+</p>
+
+```{r}
+# install.packages("magic")
+library("magic")
+```
+
+<p dir="RTL">
+سپس با توجه به دیتاشیت این پکیج با دستور magic(n) مربعی از اندازهی n خروجی داده میشود.
+</p>
+
+```{r}
+magic(4)
+
+```
+
+```{r}
+magic(5)
+```
+
+```{r}
+magic(6)
+
+```
+
+
+***
+
+<h2 dir="RTL">
+جایشگت  عجیب
+</h2>
+
+<p dir="RTL">
+جایگشت هایی از اعداد ۱ تا ۱۳ را پیدا کنید که در شرایط زیر صدق کنند:
+</p>
+
+$$ a = (a_1, a_2,..., a_{13})$$
+$$\frac{a_1}{a_2+a_3} = \frac{a_2+a_3}{a_3+a_4+a_5}<1$$
+$$\frac{a_6}{a_6+a_7}= \frac{a_6+a_7}{a_7+a_8+a_9} = \frac{a_7+a_8+a_9}{a_5+a_9+a_{10}} <1$$
+
+$$\frac{a_{11}+a_{12}}{a_{12}+a_{13}}=\frac{a_{12}+a_{13}}{a_{13}+a_{10}}<1$$
+
+<p dir="RTL">
+یکی از روشهای موجود، استفاده از تابع permutations از پکیج gtools برای به دست آوردن جایگشتهای ممکن است. میتوان ابتدا تمام حالتهای ممکن را ساخت و سپس با استفاده از شرطهای داده شده تعدادی را حذف کرد تا به جایگشت مورد نظر برسیم. که این راه حل زمان زیادی طول میکشد.
+بنابراین، با استفاده از معادلههای داده شده میتوان حالتهای مختلف تعدادی از عناصر را به دست آورد و سپس بقیه حالتها را چک کرد. مثلا در اینجا، چون تعداد حالتهای سومین معادله کمتر از بقیه معادلههاست، ابتدا تمام اعدادی که میتوانند در جایگاههای ۱۰ تا ۱۳ باشند را به دست میآوریم. (و در ماتریس third ذخیره میکنیم. ) بدین صورت که ابتدا تمام جایگشتهای ۴تایی برای این جایگاه را به دست آورده، سپس شرط را روی آنها چک میکنیم و در صورتی که صادق نبود، آنها را از لیست جایگشتها حذف میکنیم. سپس با چک کردن شرط اول برای به دست آوردن تمام اعداد جایگاههای ۱ تا ۵ و ۱۰ تا ۱۳، ماتریسی مانند arr2 میسازیم تا اعداد این جایگاهها در شرط های اول و سوم صدق کنند. (در این مرحله اعدادی از ۱ تا n که در هر سطر آرایهی third استفاده نشدهاند را انتخاب کرده و جایگشتهای ۵تایی آنها را بررسی میکنیم. )
+سپس برای هر سطر ماتریس arr2 جایگشتهای ۴تایی از اعداد باقیمانده را به دست میآوریم و در صورتی که در معادلهی دوم صدق میکرد چاپ میکنیم.
+</p>
+
+```{r}
+n = 13
+library("gtools")
+arr = rep(0, n)
+# 3rd equation
+perms = permutations(n, 4, 1:n)
+flag = rep(FALSE, nrow(perms))
+for(i in 1:length(flag)) {
+  a10 = perms[i, 1]
+  a11 = perms[i, 2]
+  a12 = perms[i, 3]
+  a13 = perms[i, 4]
+  if((a11 + a12)/(a12 + a13) < 1 & (a11 + a12)/(a12 + a13) == (a12 + a13)/(a13 + a10))
+    flag[i] = TRUE
+}
+third = perms[which(flag == TRUE), ] # 3rd equation is checked
+
+arr2 = matrix(ncol = 13)
+size = 0
+# 1st equation
+for(j in 1:nrow(third)) {
+  arr = 1:n
+  arr = arr[-which(arr %in% third[j, ])]
+  perms = permutations(9, 5, arr)
+  for(i in 1:nrow(perms)) {
+    a1 = perms[i, 1]
+    a2 = perms[i, 2]
+    a3 = perms[i, 3]
+    a4 = perms[i, 4]
+    a5 = perms[i, 5]
+    if(a1 / (a2 + a3) < 1 & a1/(a2 + a3) == (a2 + a3)/(a3 + a4 + a5)) {
+      newrow = rep(0, 13)
+      newrow[10:13] = third[j, ]
+      newrow[1:5] = perms[i, ]
+      arr2 = rbind(arr2, newrow)
+    }
+  }
+}
+
+# 2nd equation
+for(j in 2:nrow(arr2)) {
+  arr = 1:n
+  arr = arr[-which(arr %in% arr2[j, ])]
+  perms = permutations(4, 4, arr)
+  for(i in 1:nrow(perms)) {
+    a6 = perms[i, 1]
+    a7 = perms[i, 2]
+    a8 = perms[i, 3]
+    a9 = perms[i, 4]
+    a5 = arr2[j, 5]
+    a10 = arr2[j, 10]
+    if ((a7 + a8 + a9) / (a5 + a9 + a10) < 1 & (a6 / (a6 + a7) == (a6 + a7) / (a7 + a8 + a9)) & (a6 / (a6 + a7) == (a7 + a8 + a9) / (a5 + a9 + a10))) {
+      ans = arr2[j, ]
+      ans[6:9] = perms[i, ]
+      print(ans)
+    }
+  }
+}
+
+```
+
+
+***
+<p dir="RTL">
+راه دوم بدون استفاده از دستور permutations زده شده که به صورت زیر است.
+</p>
+
+```{r}
+n = 13
+b = rep(0, n)
+
+a10_a13_ineq <- function(a) {
+  for(a12 in 1:n)
+    for(a13 in (1:n)[-a12])
+      for(a10 in (1:n)[-c(a12, a13)])
+        if ((a12 + a13)/(a13 + a10) < 1)
+          for(a11 in (1:n)[-c(a10, a12, a13)])
+            if((a11 + a12)/(a12 + a13) == (a12 + a13)/(a13 + a10)) {
+              a[10] = a10
+              a[11] = a11
+              a[12] = a12
+              a[13] = a13
+              # print(a)
+              a1_a5_ineq(a)
+            }
+}
+
+a1_a5_ineq <- function(a) {
+  arr = 1:n
+  arr = arr[-which(arr %in% a)]
+  for(a1 in arr)
+    for(a2 in arr[arr != a1])
+      for(a3 in arr[arr != a1 & arr != a2])
+        if (a1 / (a2 + a3) < 1)
+          for(a4 in arr[arr != a1 & arr != a2 & arr != a3])
+            for(a5 in arr[arr != a1 & arr != a2 & arr != a3 & arr != a4])
+              if(a1/(a2 + a3) == (a2 + a3)/(a3 + a4 + a5)) {
+                a[1] = a1
+                a[2] = a2
+                a[3] = a3
+                a[4] = a4
+                a[5] = a5
+                a6_a9_ineq(a)
+              }
+}
+
+a6_a9_ineq <- function(a) {
+  arr = 1:n
+  arr = arr[-which(arr %in% a)]
+  for(a7 in arr)
+    for(a8 in arr[arr != a7])
+      for(a9 in arr[arr != a8 & arr != a7])
+        if ((a7 + a8 + a9) / (a[5] + a9 + a[10]) < 1)
+          for(a6 in arr[arr != a9 & arr != a8 & arr != a7])
+            if (a6 / (a6 + a7) == (a7 + a8 + a9) / (a[5] + a9 + a[10]) & a6 / (a6 + a7) == (a6 + a7) / (a7 + a8 + a9)) {
+              a[6] = a6
+              a[7] = a7
+              a[8] = a8
+              a[9] = a9
+              print(a)
+            }
+}
+
+a10_a13_ineq(b)
+
+```
+
+***
+
+<h2 dir="RTL">
+مچ گیری
+</h2>
+
+<p dir="RTL">
+میزگردی شامل ۱۶ فرد دروغگو و راستگو تشکیل شده است. هر کسی ادعا میکند دو فرد کنار دستی او دروغگو هستند. چند نفر دروغگو در جمع وجود دارد؟
+</p>
+
+<p dir="RTL">
+برای به دست آوردن میز توصیف شده از راستگوها و دروغگو ها، میتوان با استفاده از تابع permutations تمام حالتهای ممکن برای راستگو یا دروغگو بودن افراد میز را به دست آورد. تنها کافی است مقدار repeats.allowed را برابر با TRUE قرار دهیم تا تمام این جایگشتهای راستگو یا دروغگو بودن (TRUE و یا FALSE) را به دست آورد. سپس برای هر ترکیب به دست آمده، چک میکنیم که آیا راستگوها و دروغگوهای مشخص شده در ترکیب در شرایط مساله صدق میکنند یا نه. (دو طرف راستگوها باید حتما دروغگو و هر دوطرف دروغگوها دروغگو نباشد.) سپس اگر در این شرایط صدق میکرد، تعداد دروغگوها را چاپ میکنیم.
+</p>
+
+```{r}
+library("gtools")
+n = 16
+# all possible seats for n people around the table
+seats = permutations(n = 2, r = n, v = c(TRUE, FALSE), repeats.allowed = TRUE)
+for(i in 1:nrow(seats)) {
+  flag = TRUE  # if this permutation suits the assumptions of problem
+  perm = seats[i, ]
+  for(j in 1:n) {
+    right = (n + j - 1) %% n + 2  # since r is 1-based
+    left = (n + j - 3) %% n + 2
+    if (perm[j] == TRUE) {
+      if (isTRUE(perm[right]) | isTRUE(perm[left]))
+        flag = FALSE
+    }
+    else {
+      if (!isTRUE(perm[right]) & !isTRUE(perm[left]))
+        flag = FALSE
+    }
+    if (!flag)
+      break
+  }
+  if (flag) {
+    print(perm)
+    print("number of liars: ")
+    print(length(which(perm == FALSE)))
+    break # if we comment this line, we can see all possible answers for the problem. (8, 9 or 10 liars)
+  }
+}
+
+```
+
+***
+
+
+<p dir="RTL">
+میزگرد دیگری شامل ۱۲ نفر فرد راستگو و دروغگو تشکیل شده به طوری که هر فرد ادعا میکند از میان دو نفر کنار دستی یک نفر راستگو و یک نفر دروغگو هستند. چند نفر دروغگو در جمع وجود دارد؟
+</p>
+
+<p dir="RTL">
+همانند قسمت قبل عمل میکنیم. تنها کافی است شرط های راستگوها و درغگوها را مانند این قسمت تغییر دهیم.
+</p>
+
+
+```{r}
+n = 12
+# all possible seats for n people around the table
+seats = permutations(n = 2, r = n, v = c(TRUE, FALSE), repeats.allowed = TRUE)
+for(i in 1:nrow(seats)) {
+  flag = TRUE  # if this permutation suits the assumptions of problem
+  perm = seats[i, ]
+  for(j in 1:n) {
+    right = (n + j - 1) %% n + 2
+    left = (n + j - 3) %% n + 2
+    if (perm[j] == TRUE) {
+      if (!((isTRUE(perm[right]) & !isTRUE(perm[left])) | (!isTRUE(perm[right]) & isTRUE(perm[left]))))
+        flag = FALSE
+    }
+    else {
+      if ((isTRUE(perm[right]) & !isTRUE(perm[left])) | (!isTRUE(perm[right]) & isTRUE(perm[left])))
+        flag = FALSE
+    }
+    if (!flag)
+      break
+  }
+  if (flag) {
+    print(perm)
+    print("number of liars: ")
+    print(length(which(perm == FALSE)))
+    break # if we comment this line, we can see all possible answers for the problem. (4 or 12 liars)
+  }
+}
+
+```
+
+***
+
+<p dir="RTL">
+این دفعه میزگردی هشت نفره تشکیل شده به گونه ایی که چهار نفر ادعا میکنند از از میان دو نفر کنار دستی یکی دروغگو و دیگری راستگوست و چهار نفر دیگر اعلام میکنند که هر دو فرد کنار دستی آنها دروغگو هستند. چند نفر دروغگو در میان جمع است؟
+</p>
+
+<p dir="RTL">
+در این قسمت نیز مانند قسمتهای قبل، تمام حالتهای ممکن برای راستگو یا دروغگو بودن افراد میز را به دست میآوریم. حال برای چک کردن اینکه آیا هر ترکیب در فرض مسئله صدق میکند یا نه، دو آرایه first و second را در نظر میگیریم که به ترتیب افرادی در آنها TRUE خواهند بود که یکی از حالتهای اول (از میان دو نفر کنار دستی یکی دروغگو و دیگری راستگوست) یا دوم (هر دو فرد کنار دستی آنها دروغگو) را گفته باشند. حال اگر فردی وجود داشته باشد که در هیچ یک از این دستهها نگنجد، مقدار can_have_op، FALSE شده و به سراغ ترکیب بعدی میرویم. اما اگر همهی افراد یکی از این دو حالت را بتوانند داشته باشند، به سراغ چک کردن آرایههای first و second میرویم که هر یک حداقل باید ۴ عضو TRUE داشته باشند.
+</p>
+```{r}
+n = 8
+# all possible seats for n people around the table
+seats = permutations(n = 2, r = n, v = c(TRUE, FALSE), repeats.allowed = TRUE)
+for(i in 1:nrow(seats)) {
+  flag = TRUE  # if this permutation suits the assumptions of problem
+  perm = seats[i, ]
+  first = vector(length = n)  # 1st opinion: one of neighbours liar and one truthteller
+  second = vector(length = n) # 2nd opinion: both neighbours liar
+  for(j in 1:n) {
+    right = (n + j - 1) %% n + 2
+    left = (n + j - 3) %% n + 2
+    can_have_op = FALSE
+    # print(c("right, left: ", right, left))
+    if (perm[j] == TRUE) {
+      if ((isTRUE(perm[right]) & !isTRUE(perm[left])) | (!isTRUE(perm[right]) & isTRUE(perm[left]))) {
+        can_have_op = TRUE
+        first[j] = TRUE
+      }
+      if (!isTRUE(perm[right]) & !isTRUE(perm[left])) {
+        can_have_op = TRUE
+        second[j] = TRUE
+      }
+    }
+    else {
+      if (!((isTRUE(perm[right]) & !isTRUE(perm[left])) | (!isTRUE(perm[right]) & isTRUE(perm[left])))) {
+        can_have_op = TRUE
+        first[j] = TRUE
+      }
+      if (isTRUE(perm[right]) | isTRUE(perm[left])) {
+        can_have_op = TRUE
+        second[j] = TRUE
+      }
+    }
+    if (!can_have_op) {
+      flag = FALSE
+      break
+    }
+  }
+  if (flag & length(which(first == TRUE)) >= 4 & length(which(second == TRUE)) >= 4) {
+    print(perm)
+    print("number of liars: ")
+    print(length(which(perm == FALSE)))
+    break # if we comment this line, we can see all possible answers for the problem. (3, 4, 5 or 6 liars)
+  }
+}
+
+
+```

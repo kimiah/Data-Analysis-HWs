@@ -1,0 +1,517 @@
+---
+title: "Seventh Week: Generalized Linear Models"
+subtitle: "Murder or suicide"
+author: "Kimia Hamidieh"
+
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/giraffe-suicide-fail-cartoon.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با توجه به سوالات مرگ و میر در آمریکا به سوالات زیر پاسخ دهید.
+</p>
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library("readr")
+library("dplyr")
+library("ggplot2")
+library("ggthemes")
+library("Hmisc")
+library(car)
+library(corrplot)
+library(ROCR)
+library(grid)
+library(caret)
+library(scales)
+library(gridExtra)
+library(data.table)
+library(tidyr)
+
+ms_data = read_csv("data/murder_suicide.csv")
+
+
+
+ConfusionMatrixInfo <- function(data, predict, actual, cutoff )
+{	
+  # extract the column ;
+  # relevel making 1 appears on the more commonly seen position in 
+  # a two by two confusion matrix	
+  predict <- data[[predict]]
+  actual  <- relevel( as.factor( data[[actual]] ), "1" )
+  
+  result <- data.table( actual = actual, predict = predict )
+  
+  # caculating each pred falls into which category for the confusion matrix
+  result[ , type := ifelse( predict >= cutoff & actual == 1, "TP",
+                            ifelse( predict >= cutoff & actual == 0, "FP", 
+                                    ifelse( predict <  cutoff & actual == 1, "FN", "TN" ) ) ) %>% as.factor() ]
+  
+  # jittering : can spread the points along the x axis 
+  plot <- ggplot( result, aes( actual, predict, color = type ) ) + 
+    geom_violin( fill = "white", color = NA ) +
+    geom_jitter( shape = 1, alpha = 0.6) + 
+    geom_hline( yintercept = cutoff, color = "blue", alpha = 0.6 ) + 
+    scale_y_continuous( limits = c( 0, 1 ) ) + 
+    scale_color_discrete( breaks = c( "TP", "FN", "FP", "TN" ) ) + # ordering of the legend 
+    guides( col = guide_legend( nrow = 2 ) ) + # adjust the legend to have two rows  
+    ggtitle( sprintf( "Confusion Matrix with Cutoff at %.2f", cutoff ) )
+  
+  return( list( data = result, plot = plot ) )
+}
+
+AccuracyCutoffInfo <- function( train, test, predict, actual, cutoff )
+{
+  # change the cutoff value's range as you please 
+  cutoff <- seq( .4, .8, by = 0.03 )
+  
+  accuracy <- lapply( cutoff, function(c)
+  {
+    # use the confusionMatrix from the caret package
+    cm_train <- confusionMatrix( as.factor( train[[predict]] > c ), as.factor(train[[actual]] == 1))
+    cm_test  <- confusionMatrix( as.factor( test[[predict]]  > c ), as.factor(test[[actual]] == 1))
+    
+    dt <- data.table( cutoff = c,
+                      train  = cm_train$overall[["Accuracy"]],
+                      test   = cm_test$overall[["Accuracy"]] )
+    return(dt)
+  }) %>% rbindlist()
+  
+  # visualize the accuracy of the train and test set for different cutoff value 
+  # accuracy in percentage.
+  accuracy_long <- gather( accuracy, "data", "accuracy", -1 )
+  
+  plot <- ggplot( accuracy_long, aes( cutoff, accuracy, group = data, color = data ) ) + 
+    geom_line( size = 1 ) + geom_point( size = 3 ) +
+    # scale_y_continuous( label = "percent" ) +
+    ggtitle( "Train/Test Accuracy for Different Cutoff" )
+  
+  return( list( data = accuracy, plot = plot ) )
+}
+
+ROCInfo <- function( data, predict, actual, cost.fp, cost.fn )
+{
+  # calculate the values using the ROCR library
+  # true positive, false postive 
+  pred <- ROCR::prediction( data[[predict]], data[[actual]] )
+  perf <- ROCR::performance( pred, "tpr", "fpr" )
+  roc_dt <- data.frame( fpr = perf@x.values[[1]], tpr = perf@y.values[[1]] )
+  
+  # cost with the specified false positive and false negative cost 
+  # false postive rate * number of negative instances * false positive cost + 
+  # false negative rate * number of positive instances * false negative cost
+  cost <- perf@x.values[[1]] * cost.fp * sum( data[[actual]] == 0 ) + 
+    ( 1 - perf@y.values[[1]] ) * cost.fn * sum( data[[actual]] == 1 )
+  
+  cost_dt <- data.frame( cutoff = pred@cutoffs[[1]], cost = cost )
+  
+  # optimal cutoff value, and the corresponding true positive and false positive rate
+  best_index  <- which.min(cost)
+  best_cost   <- cost_dt[ best_index, "cost" ]
+  best_tpr    <- roc_dt[ best_index, "tpr" ]
+  best_fpr    <- roc_dt[ best_index, "fpr" ]
+  best_cutoff <- pred@cutoffs[[1]][ best_index ]
+  
+  # area under the curve
+  auc <- performance( pred, "auc" )@y.values[[1]]
+  
+  # normalize the cost to assign colors to 1
+  normalize <- function(v) ( v - min(v) ) / diff( range(v) )
+  
+  # create color from a palette to assign to the 100 generated threshold between 0 ~ 1
+  # then normalize each cost and assign colors to it, the higher the blacker
+  # don't times it by 100, there will be 0 in the vector
+  col_ramp <- colorRampPalette( c( "green", "orange", "red", "black" ) )(100)   
+  col_by_cost <- col_ramp[ ceiling( normalize(cost) * 99 ) + 1 ]
+  
+  roc_plot <- ggplot( roc_dt, aes( fpr, tpr ) ) + 
+    geom_line( color = rgb( 0, 0, 1, alpha = 0.3 ) ) +
+    geom_point( color = col_by_cost, size = 4, alpha = 0.2 ) + 
+    geom_segment( aes( x = 0, y = 0, xend = 1, yend = 1 ), alpha = 0.8, color = "royalblue" ) + 
+    labs( title = "ROC", x = "False Postive Rate", y = "True Positive Rate" ) +
+    geom_hline( yintercept = best_tpr, alpha = 0.8, linetype = "dashed", color = "steelblue4" ) +
+    geom_vline( xintercept = best_fpr, alpha = 0.8, linetype = "dashed", color = "steelblue4" )				
+  
+  cost_plot <- ggplot( cost_dt, aes( cutoff, cost ) ) +
+    geom_line( color = "blue", alpha = 0.5 ) +
+    geom_point( color = col_by_cost, size = 4, alpha = 0.5 ) +
+    ggtitle( "Cost" ) +
+    scale_y_continuous( labels = comma ) +
+    geom_vline( xintercept = best_cutoff, alpha = 0.8, linetype = "dashed", color = "steelblue4" )	
+  
+  # the main title for the two arranged plot
+  sub_title <- sprintf( "Cutoff at %.2f - Total Cost = %f, AUC = %.3f", 
+                        best_cutoff, best_cost, auc )
+  
+  # arranged into a side by side plot
+  plot <- arrangeGrob( roc_plot, cost_plot, ncol = 2, 
+                       top = textGrob( sub_title, gp = gpar( fontsize = 10, fontface = "bold" ) ) )
+  
+  return( list( plot 		  = plot, 
+                roc_plot = roc_plot,
+                cost_plot = cost_plot,
+                cutoff 	  = best_cutoff, 
+                totalcost   = best_cost, 
+                auc         = auc,
+                sensitivity = best_tpr, 
+                specificity = 1 - best_fpr ) )
+}
+
+
+```
+
+
+***
+
+# سوال ۱
+
+<p dir="RTL">
+۱. از میان متغیرهای داده مرگ و میر یک زیرمجموعه ایی بدون حشو در نظر بگیرید.
+ماتریس همبستگی متغیرهای مختلف را به دست آورده و سپس رسم نمایید. علاوه بر این نمودار پراکنش متغیرهای انتخاب شده را همزمان نسبت به هم رسم نمایید.
+</p>
+
+<p dir="RTL">
+ستونهایی که معنای مشابهی دارند و یا واضحاً بههم مربوطند (مانند انواع ستونهای مربوط به سال، نژاد و …) را حذف میکنیم. همچنین ستونهای PlaceOfInjury بهعلت مشابه بودن با ActivityCode، CurrentDataYear و Id و Icd10Code (بهعلت موجود نبودن توضیحات مربوط به آن در داک دادهشده) نیز حذف شدهاند. 
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ms_data %>% 
+  select(-c(Id, AgeType, AgeSubstitutionFlag, AgeRecode12, AgeRecode27, AgeRecode52, 
+            CurrentDataYear, CauseRecode358, CauseRecode113, CauseRecode39, InfantCauseRecode130, 
+            NumberOfEntityAxisConditions, NumberOfRecordAxisConditions, 
+            Race, RaceRecode5, BridgedRaceFlag, RaceImputationFlag, 
+            HispanicOrigin, HispanicOriginRaceRecode,
+            PlaceOfInjury, # similar to ActivityCode
+            Icd10Code)) -> ms # couldn't be found in docs
+
+```
+
+<p dir="RTL">
+میدانیم ماتریس correlation روش مناسبی برای بررسی ارتباط متغیرها با هم نیست چرا که تنها مربوط بودن خطی دو متغیر بههمپیوسته را میدهد. اما به هر حال در اینجا با توجه به صورت سوال بهعنوان روشی اولیه برای حدس متغیرهای مربوط به ستون علت مرگ ارائه شده است. همانطور که از ماتریس correlation پیوستشده (pdf) دیده میشود، میتوان حدسهایی برای متغیرهای مربوطه زد که مشخص شده اند.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ms %>% 
+  mutate(Sex = as.numeric(as.factor(Sex))) %>% 
+  mutate(MaritalStatus = as.numeric(as.factor(MaritalStatus))) %>% 
+  mutate(InjuryAtWork = as.numeric(as.factor(InjuryAtWork))) %>% 
+  mutate(MethodOfDisposition = as.numeric(as.factor(MethodOfDisposition))) %>% 
+  mutate(Autopsy = as.numeric(as.factor(Autopsy))) %>% 
+  as.matrix() -> ms_numeric
+
+ms_cors = rcorr(ms_numeric)
+cor_mat = ms_cors$r
+cor_pvals = ms_cors$P
+
+corrplot(cor_mat, p.mat = cor_pvals, method = "square", insig = "blank")
+
+# scatterplotMatrix(x = ms_numeric, formula = MannerOfDeath ~ .)
+
+
+```
+
+***
+
+# سوال ۲
+
+<p dir="RTL">
+۲. اثر هر یک از متغیرهای جنسیت، نژاد،آموزش، سن و نحوه تدفین را بر مرگ یا خودکشی ارزیابی کنید.
+</p>
+
+<p dir="RTL">
+برای بررسی اثر هر یک از متغیرها، میتوان از chi-squared test of independency استفاده کرد که برای متغیرهای categorial بهکار میرود. (برای متغیر آموزش، میتوان همانطور که در سوال بعد، مقیاس یکسان و پیوستهای برای آن ارائه شده است، استفاده کرد که در این صورت میتوان از t-test استفاده کرد. ولی در اینجا با متغیرهای categorial ِ آموزش، برای هر دسته بهصورت جدا، نشان داده شده که میزان آموزش موثر است. که اگر از روش اول استفاده میکردیم نیز همین نتیجه بهدست میامد. 
+
+با توجه به p-value های بهدستآمده برای این تستها میتوان به این نتیجه رسید که همگی این متغیرها موثرند و باید در مدل باشند.
+
+همچنین برای مدل بهتر در قسمت بعد، تاثیر پارامترهایی که در سوال قبل به نظر موثر آمده بودند را با استفاده از همان تست، بهدست آمده و نهایتاً در متغیرهای مدل قسمت بعد قرار داده شده اند.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+prop.test(table(ms_data$MannerOfDeath, ms_data$Sex), correct = FALSE)
+
+chisq.test(table(ms_data$MannerOfDeath, ms_data$RaceRecode3))
+
+chisq.test(table(ms_data$MannerOfDeath, ms_data$AgeRecode12))
+
+chisq.test(table(ms_data$MannerOfDeath, ms_data$MethodOfDisposition))
+
+ms_data %>% filter(EducationReportingFlag == 0) %>% select(MannerOfDeath, Education1989Revision) -> ms_edu1998
+ms_data %>% filter(EducationReportingFlag == 1) %>% select(MannerOfDeath, Education2003Revision) -> ms_edu2003
+chisq.test(table(ms_edu1998$MannerOfDeath, ms_edu1998$Education1989Revision))
+chisq.test(table(ms_edu2003$MannerOfDeath, ms_edu2003$Education2003Revision))
+
+# other vars
+chisq.test(table(ms_data$MannerOfDeath, ms_data$Autopsy))
+chisq.test(table(ms_data$MannerOfDeath, ms_data$ActivityCode))
+chisq.test(table(ms_data$MannerOfDeath, ms_data$MaritalStatus))
+```
+
+
+***
+
+# سوال ۳
+
+<p dir="RTL">
+۳. با استفاده از مدل رگرسیون لاجستیک یک مدل به داده ها برازش دهید و سپس آن را نقص یابی کنید.
+</p>
+
+<p dir="RTL">
+با استفاده از تابع glm و متغیرهای بهدست آمده در قسمت قبل، یک مدل رگرسیون لاجستیک به دادهها برازش داده شده است. که همانطور که دیده میشود z-value این متغیرها همگی significant بوده. (متغیرهایی که برای آنها z-value زیادی بهدست آمده بود، مانند ActivityCode، از مدل حذف شده اند.)
+برای نقصیابی از نمودارهای تابع
+glm.diag.plots
+استفاده میکنیم.
+در نمودار بالا سمت راست، نمونههای نشاندادهشده باید روی خط $y=x$ باشند. که با توجه به این نمودار نتایج بهدستآمده از نظر normality مشکلی نخواهند داشت. در نمودار بالا سمت راست، دادهها باید بدون هیچ پترن خاص، روی $y=0$ نرمال باشند که با توجه به نمودار کشیدهشده، residualها بسیار متفاوت از انتظارند. در نمودار پایین سمت راست، همهی نمونهها باید در ناحیهی مشخصشده باشند که با توجه به نمودار میتوان گفت از این نظر نمونهها نسبتاً خوب پیشبینی شدهاند. در نمودار پایین سمت چپ نیز نقطهها باید در ناحیه مشخصشده بین دو خط باشند که میتوان گفت از این لحاظ نیز نمونهها بد پیشبینی نشدهاند.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ms %>% 
+  mutate(Education = ifelse(EducationReportingFlag, Education2003Revision/max(Education2003Revision), Education1989Revision/max(Education1989Revision))) %>% 
+  select(c(MannerOfDeath, Education,
+           Sex, Age, PlaceOfDeathAndDecedentsStatus, MethodOfDisposition, RaceRecode3, 
+           Autopsy, 
+           # ActivityCode,
+           MaritalStatus)) %>%
+  mutate(PlaceOfDeathAndDecedentsStatus = as.factor(PlaceOfDeathAndDecedentsStatus)) %>% 
+  mutate(RaceRecode3 = as.factor(RaceRecode3)) %>% 
+  # mutate(ActivityCode = as.factor(ActivityCode)) %>% 
+  mutate(MannerOfDeath = as.factor(MannerOfDeath - 2)) -> ms_clean
+
+# ActivityCode1                    1.066e+01  9.267e+01   0.115 0.908406    
+# ActivityCode2                    1.083e-01  1.530e+02   0.001 0.999435    
+# ActivityCode4                    1.111e+01  9.267e+01   0.120 0.904571    
+# ActivityCode8                    1.021e+01  9.267e+01   0.110 0.912232    
+# ActivityCode9                    1.033e+01  9.266e+01   0.111 0.911223    
+# ActivityCode99                   1.337e+01  9.267e+01   0.144 0.885280    
+
+glm_model = glm(MannerOfDeath ~ ., data = ms_clean, family = "binomial")
+summary(glm_model)
+
+library("boot")
+glm.diag.plots(glm_model, glmdiag = glm.diag(glm_model))
+```
+
+
+***
+
+# سوال ۴
+
+<p dir="RTL">
+۴. با استفاده از سه نمودار خروجی مدل را نسبت به داده واقعی ارزیابی کنید.
+</p>
+
+
+
+```{r message=FALSE, warning=FALSE}
+ms_preds = ms_clean %>% mutate(pred = predict(glm_model, type = 'response'))
+
+# 0: suicide  1: murder
+ggplot(ms_preds, aes(pred, color = as.factor(MannerOfDeath))) + 
+  geom_density(size = 1) +
+  ggtitle("Training Set's Predicted Score") +
+  scale_color_economist(name = "prediction", labels = c("Suicide", "Murder"))
+```
+<p dir="RTL">
+با توجه به این نمودار، نمونههای مربوط به خودکشی، نسبتاً خوب پیشبینی میشوند چرا که تعداد بسیار کمی از آنها مقدار نزدیک به ۱ دارد. (نسبت به تعداد کل) همچنین تعداد زیادی از آنها مقدار پیشبینیشده برای آنها بسیار نزدیک به صفر به دست آمده است. اما برای قتل، مدل نتوانسته است پیشبینی نسبتاً خوبی ارائه دهد چرا که تقریباً ۱/۳ قتلها (اگر پارامتری که برای تشخیص بین ۰ و ۱ داریم را ۰.۵ در نظر گیریم) در قسمت خودکشی قرار خواهند گرفت. همچنین این نمودار در بازهی ۰.۲۵ تا ۰.۷۵ تقریباً یونیفرم است. در بازهی ۰ تا ۰.۳ نیز تداخل این نمودارها نسبتاً زیاد است (بهعلت درست پیشبینی نشدن قتل)
+</p>
+
+
+
+```{r message=FALSE, warning=FALSE}
+table(ms_preds$MannerOfDeath, ifelse(fitted(glm_model) > 0.5, 1, 0)) %>% plot()
+```
+
+<p dir="RTL">
+با توجه به این نمودار، محور عمودی پیشبینی ما (با پارامتر ۰.۵) و محور افقی مقدار واقعی است. یعنی مستطیل بالا سمت راست، مقادیر قتلهایی که خودکشی پیشبینی شده اند را نشان میدهد که از پایین سمت چپ که خودکشیهایی که قتل پیشبینی شدهاند بیشتر است. که اگر پارامترمان را در نمودار قبلی ۰.۵ در نظر بگیریم، این مستطیلها هر یک متناظر با قسمتی از نمودار قبلی اند. (مثلاً نمودار مربوط به خودکشیهای با مقدار predict بیشتر از ۰.۵، معادل مستطیل پایین چپ اند.)
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+ms_info = ConfusionMatrixInfo(data = ms_preds, predict = "pred", 
+                              actual = "MannerOfDeath", cutoff = .5)
+ms_info$plot
+```
+<p dir="RTL">
+این نمودار نیز دقیقاً متناظر با دو نمودار قبلی است و همان تفسیرها برای این نمودار نیز گفته میشود. (مثلاً نقاطی که در آنها actual = 1 و predict بیش از ۰.۰۵ باشد (سبزها) متناظر با مستطیل پایین چپ قسمت قبلی اند.) که در کل این نتیجه گرفته میشود که مقدارهای خودکشی درستتر حدس زده شده است. یعنی مقدار FP از FN بیشتر است. در کل نیز مقدار خطای کل کم نیست.
+</p>
+
+***
+
+# سوال ۵
+
+<p dir="RTL">
+۵. ابتدا ۲۰ درصد داده را به صورت تصادفی به عنوان تست در نظر بگیرید. مدل را با استفاده از ۸۰ درصد باقی مانده برازش دهید. با استفاده از پارامتر قطع ۰.۵ نتایج را برای داده تست پیش بینی کنید. سپس کمیت های زیر را محاسبه کنید.
+</p>
+
+* P: positive samples
+* N: negative samples
+* TP: true positive TP (eqv. with hit)
+* TN: true negative (eqv. with correct rejection)
+* FP: false positive (eqv. with false alarm, Type I error)
+* FN: false negative (eqv. with miss, Type II error)
+* Accuracy (ACC) ACC = (TP+TN)/(P+T)
+* False positive rate (FPR): 1- TN/N
+* True positive rate (TPR): TP/P
+
+<p dir="RTL">
+مشابه آنچه در کلاس گفته شد نمایشی از  چهار کمیت 
+TN, TP,FP,FN
+به همراه داده ها رسم نمایید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+index = sample(x = 1:nrow(ms_clean), size = 0.8 * nrow(ms_clean), replace = F)
+train = ms_clean[index,] 
+test =  ms_clean[-index,]
+
+model_train = glm(MannerOfDeath ~ ., data = train, family = "binomial")
+
+train$prediction = predict(model_train, newdata = train, type = "response")
+test$prediction  = predict(model_train, newdata = test , type = "response")
+
+test$binpred = ifelse(test$prediction > 0.5, 1, 0)
+
+P = length(which(test$binpred == 1))
+N = length(which(test$binpred == 0))
+
+tconf <- with(test, table("Prediction" = binpred, "Reference" = MannerOfDeath))
+TP = tconf[1, 1]
+FP = tconf[1, 2]
+FN = tconf[2, 1]
+TN = tconf[2, 2]
+
+ACC = (TP + TN) / (P + N)
+FPR = 1 - TN / N
+TPR = TP / P
+
+print(c("P:", P, "N:", N))
+tconf
+print(c("TP:", TP, "TN:", TN, "FP:", FP, "TN:", FN))
+print(c("ACC:", ACC, "FPR:", FPR, "TPR:", TPR))
+
+table(test$MannerOfDeath, test$binpred) %>% plot()
+
+cm_info = ConfusionMatrixInfo(data = test, predict = "binpred", 
+                              actual = "MannerOfDeath", cutoff = .5)
+cm_info$plot
+```
+
+
+
+***
+
+# سوال ۶
+
+<p dir="RTL">
+۶. نمودار صحت مدل (accuracy) را بر حسب مقادیر مختلف قطع برای داده تست رسم نمایید. کدام پارامتر قطع بالاترین صحت را در پیش بینی داراست؟
+</p>
+
+<p dir="RTL">
+با توجه به نمودار کشیدهشده برای accuracy برای مقادیر مختلف پارامتر قطع، میتوان دید که accuracy دیتای test (و نیز دیتای train) بیشترین مقدار را در cutoff = 0.48 دارد. که این را نیز با نمودارهای قبلی به این دلیل میتوان توجیه کرد که با پارامتر قطع ۰.۵، مقدار FN بیشتر از FP بوده و با نزدیک کردن cutoff به صفر جمع این دو مقدار مینیمم شده است. 
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+accuracy_info = AccuracyCutoffInfo(train = train, test = test, 
+                                   predict = "prediction", actual = "MannerOfDeath")
+accuracy_info$plot
+```
+
+
+***
+
+# سوال ۷
+
+<p dir="RTL">
+۷. نمودار 
+ROC
+ را برای داده های قسمت قبل رسم نمایید. همچنین نقطه مربوط به بهترین پارامتر قطع را مشخص نمایید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+cost_fp = 100
+cost_fn = 200
+roc_info = ROCInfo(data = cm_info$data, predict = "predict", 
+                    actual = "actual", cost.fp = cost_fp, cost.fn = cost_fn)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+roc_info$roc_plot
+```
+
+![](ROC.png)
+
+```{r eval=FALSE, message=FALSE, warning=FALSE}
+roc_info$cost_plot
+```
+![](cost.png)
+<p dir="RTL">
+با توجه به این که نمودارها در مارکداون ران نشدند، از عکس آنها که از اسکریپت پیوست شده بهدست آمدهاست، استفاده شده.
+</p>
+
+
+***
+
+# سوال ۸
+
+<p dir="RTL">
+۸. با قرار دادن کمیت 
+nfolds = 5
+و با استفاده از 
+H20
+مدل مساله را بسازید و نتیجه حاصل را ارزیابی کنید.
+</p>
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(h2o)
+h2o.init()
+
+ms_clean %>% 
+  mutate(MaritalStatus = as.factor(MaritalStatus)) %>% 
+  mutate(MethodOfDisposition = as.factor(MethodOfDisposition)) %>% 
+  mutate(Autopsy = as.factor(Autopsy)) %>% 
+  mutate(Sex = as.factor(Sex)) -> ms_h2o
+  
+hms = as.h2o(ms_h2o)
+
+chglm = h2o.glm(y = "MannerOfDeath", x = c("Education", "Sex", "Age", "PlaceOfDeathAndDecedentsStatus", 
+                                           "MethodOfDisposition", "RaceRecode3", 
+                                           "Autopsy", "MaritalStatus"),
+                training_frame = hms, family = "binomial", nfolds = 5, compute_p_values=TRUE, lambda = 0)
+summary(chglm)
+h2o.r2(chglm)
+chglm@model$coefficients_table
+
+```
+
+
+
+<p dir=“RTL">
+در استفاده از pseoudo R^2، میتوان گفت که اگر از نوع McFadden باشد و بین ۰.۲ تا ۰.۴، دادهها نسبتاً خوب فیت شده اند. با توجه به مقدار بهدست آمده برای R-squared، میتوان گفت مدل ارائه شده کاملاً این شرط را دارا نیست ولی تا حد خوبی مطلوب است.
+با توجه به مقادیر بهدست آمده برای p-valueها، نمیتوان گفت پارامترهای بهدست آمده کاملاُ significant هستند، ولی مدل در اکثر مواقع خوب جواب میدهد. 
+</p>
+
+
+
+
+***
+
+# سوال ۹
+
+<p dir="RTL"> 
+۹. آیا ما میتوانیم سرویسی به قضات ارایه کنیم تا با استفاده از اطلاعات مرگ بتوانند موارد مشکوک به قتل را از خودکشی تفکیک دهند؟
+</p>
+
+<p dir="RTL">
+مدلهایی که ما بهدست آوردهایم، چه با تابع glm ساده و چه با استفاده از کتابخانهی h2o، خطای نسبتاً زیادی دارند. که البته شاید بتوان با دادهی train بیشتر این خطا را کم کرد. ولی به نظر من، این خطا ناشی از پارامترهایی است که احتمالاً در تشخیص قتل یا خودکشی تاثیر داشته و در این داده آورده نشده است. چون این سوال برای تشخیص باید پارامترهای انسانی مثل شخصیت فرد، وضعیت روحی او در زمانهای مختلف، شخصیت و رفتار اطرافیان و … را در نظر گرفت. که باز اندازهگیری هر یک از این کمیتها برای افراد قابل بررسی نیست. قاضی در واقع برای بررسی هر کیس، تعدادی از این کمیتها را در نظر گرفته و روی آنها تمرکز میکند. همچنین مسئلهی پیچیدهای مانند قتل، به پارامترهای بسیار زیادی و در نتیجه دادهی بزرگ احتیاج دارد. اما باز خودکشی فاکتورهای نسبتاً مشخص تری دارد و به همین علت مدلها راحتتر بتوانند خودکشی نبودن یک کیس را تشخیص دهند. در هر صورت تعداد پارامترهای مسئله بسیار زیاد بوده و حتی ممکن است بعضی از آنها را در نظر نگیریم. ابزارهایی که به این روش تولید میشود، تنها میتواند به قاضی کمک کند و پیشزمینه به او بدهد. 
+</p>
+
+
+

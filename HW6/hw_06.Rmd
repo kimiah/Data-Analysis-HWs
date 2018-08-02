@@ -1,0 +1,346 @@
+---
+title: "Sixth Week: Linear Models"
+subtitle: "House price prediction"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/house.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با توجه به داده های قیمت منازل
+لطفا با سوالات زیر پاسخ دهید.
+</p>
+
+***
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
+```
+
+
+<p dir="RTL">
+۱. ماتریس همبستگی متغیرهای مختلف را به دست آورده و سپس رسم نمایید.
+اعداد به دست آمده را با آزمون فرض معناداری همبستگی بسنجید و سپس ده متغیری که همبستگی بالاتری با قیمت دارند را مشخص نمایید.
+</p>
+
+<p dir="RTL">
+با توجه به اینکه corrolation برای متغیرهای عددی استفاده میشود، پارامترهای غیرعددی را از داده حذف میکنیم. که البته میتوان با استفاده از factor به دستهای از آنها (که میتوان آنها را بهصورت عدد طبقهبندی کرد) عدد نسبت داد که البته در این صورت انگار اولویتی برای گزینههای مختلف قائل شدهایم و بنابرای بهتر است همهی متغیرهای غیرعددی را حذف کرد.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+houses = read_csv("house_data/train.csv")
+
+library("Hmisc")
+
+houses %>% 
+  subset(select = -Id) %>% 
+  select_if(is.numeric) %>% 
+  as.matrix() %>% 
+  rcorr() -> cor_numerics
+
+cor_mat = cor_numerics$r
+cor_pvals = cor_numerics$P
+
+library(corrplot)
+# corrplot(cor_mat, p.mat = cor_pvals, method = "square", insig = "blank")
+corrplot.mixed(cor_mat, tl.col="black", tl.pos = "lt")
+
+```
+
+
+
+<p dir="RTL">
+در اینجا با استفاده از کتابخانهی بالا توانستهایم ماتریسهای correlation و p-value مربوط به آنها را به دست آوریم. با توجه به ماتریس p-value مقادیر یهدست آمده برای correlation ها همگی معنیدار بوده و بنابراین تنها کافی است طبق مقادیر بهدست آمده برای correlation در ستون قیمت، ۱۰ متغیر اول را انتخاب کنیم.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+as.data.frame(cor_mat) %>%
+  cbind(vars = row.names(cor_pvals), .) %>% 
+  arrange(-SalePrice) %>% 
+  slice(2:11) %>% # sale price has cor = 1 with itself
+  select(vars, cor = SalePrice) -> related_vars
+related_vars
+```
+
+
+***
+
+<p dir="RTL">
+۲. در یک تصویر نمودار پراکنش دو به دو ده متغیر بدست آمده به همراه قیمت را رسم نمایید و هم خطی بودن متغیرها را بررسی کنید
+</p>
+
+```{r message=FALSE, warning=FALSE}
+library("car")
+houses_clean = cbind(houses[which(colnames(houses) %in% related_vars$vars)], SalePrice = houses$SalePrice)
+# plot(houses_clean)
+scatterplotMatrix(x = houses_clean, formula = SalePrice ~ .)
+```
+
+
+
+<p dir=”RTL">
+در نمودارهای کشیده شده، برای بررسی اینکه آیا دو متغیر همخط اند یا خیر میتوان چک کرد که آیا در نمودارهای کشیدهشده، نقاط را میتوان با خطی تخمین زد یا خیر. در اینجا با توجه به اینکه مقدار عرض از مبداها احتمالاً کم است، به تعداد نقاط نزدیک به نمیساز ربع اول و سوم توجه شدهاست که با توجه به نمودارها، اکثر متغیرها با قیمت خانه همخط اند.
+</p>
+
+***
+
+<p dir="RTL">
+۳. یک مدل خطی بر اساس ده متغیر برای پیش بینی قیمت برازش دهید. و سپس خلاصه نتایج مدل را به دست آورید.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+linear_model = lm(formula = SalePrice ~ ., data = houses_clean)
+summary(linear_model)
+```
+
+
+***
+
+<p dir="RTL">
+۴. نمودار قیمت واقعی و قیمت پیش بینی را رسم نمایید و خوب بودن مدل را ارزیابی کنید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+houses_plot = cbind(houses_clean, Estimated = fitted(linear_model) %>% as.vector())
+head(houses_plot)
+ggplot(data = houses_plot, aes(x = SalePrice, y = Estimated)) +
+  geom_point(alpha = 0.5, color = "dark blue") + geom_abline(slope = 1) + theme_light()
+```
+
+
+<p dir="RTL">
+همانطور که در نمودار $Y$ به $\hat{Y}$ مشاهده میشود، اکثر نقاط بسیار نزدیک به خط $y = x$ است. بنابراین در اکثر نقاط مقدار تخمینزدهشده بسیار نزدیک به مقدار واقعی بوده و مدل نسبتاً خوب است. (به جز در دادهها با قیمت بالا که تعداد آنها نیز نسبتاً کم است.)
+</p>
+
+
+***
+
+<p dir="RTL">
+۵. مقدار
+R-squared
+ مدل را به دست آورید. آیا بر اساس این کمیت مدل به خوبی به داده ها برازش داده شده است؟
+ کمیت
+ F-statistic
+ را در خلاصه مدل تفسیر نمایید.
+</p>
+
+```{r}
+summary(linear_model)$r.squared
+```
+
+
+
+<p dir=”RTL“>
+کمیت r-squared معیاری است که به ما نشان میدهد که دادهها چقدر به خط تخمینزده نزدیکند. و در واقع درصد (در اینجا در رنج ۰ تا ۱) دادههایی که به تخمین مورد نظر نزدیکند و با آن قابل توضیحند را نشان میدهد. (کاری که این کمیت انجام میدهد با توجه به فرمول زیر این است که خطای ناشی از واریانس $Y$ که در دیگر کمیتها وجود دارد از بین رفتهاست.)
+</p>
+
+$$ R^2 = 1 - \dfrac{SS_{res}}{SS_{tot}}, SS_{res} = \sum(Y_i - \hat{Y_i})^2, SS_{tot} = \sum (Y_i - \bar{Y_i})^2$$
+
+<p dir=”RTL“>
+با توجه به مقدار r-squared این مدل میتوان به این نتیجه رسید که مدل دادهشده، نسبتاً خوب است اما باید توجه داشت که مقدار کم یا زیاد r-squared لزوماً به معنای اینکه مدل حتماً خوب و یا حتماً بد است نیست. اما در کل مقدار r-squared بالای ۰.۶ برای یک مدل خوب حتماً لازم است که در اینجا این شرط برقرار است.
+</p>
+
+
+
+```{r}
+summary(linear_model)$fstatistic
+```
+
+
+
+<p dir=”RTL“>
+کمیت F-statistic در اینجا، معیاری است که در حالت کلی معنیدار بودن مدل رگرسیونی را تعیین میکند (اینکه آیا حداقل یکی از متغیرهای در نظر گرفتهشده در مدل معنیدار هست یا نه). در واقع یک F-test روی دادهها اجرا میشود بهطوری که فرض صفر این است که تمام ضرایب مدل رگرسیونی صفرند. (یک F-test معادل چندین بار استفاده از t-test برای متغیرهای مختلف است.) و یا معادلاً مدل درنظر گرفتهشده کارایی بالایی ندارد. 
+نهایتاً مقدار F-statistic که در مدل خطی ما (با استفاده از lm) حساب شدهاست، نشانهی این است که آیا متغیرهای در نظر گرفتهشده با قیمت خانه ارتباطی دارد یا نه (مدل بهتر از حالت رندوم هست یا خیر). حال اگر مقدار آن بسیار بیشتر از ۱ باشد، (که در اینجا با توجه به نسبت آن به تعداد دادهها خیلی خیلی بیشتر است) با توجه به مقدار p-value در آخرین سطر summary، فرض صفر رد شده و مدل در نظر گرفتهشده معنیدار است.
+</p>
+
+
+***
+
+<p dir="RTL">
+۶. بر اساس
+p-value
+ سطح معناداری ضرایب تصمیم بگیرید که چه متغیرهایی در مدل سازی استفاده شود.
+بر اساس متغیرهای جدید دوباره مدل سازی کنید و نتایج رو گزارش دهید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+vars = related_vars$vars
+vars = vars[vars != "TotRmsAbvGrd"]
+houses_clean = cbind(houses[which(colnames(houses) %in% vars)], SalePrice = houses$SalePrice)
+linear_model = lm(formula = SalePrice ~ ., data = houses_clean)
+summary(linear_model)
+
+vars = vars[vars != "GarageArea"]
+houses_clean = cbind(houses[which(colnames(houses) %in% vars)], SalePrice = houses$SalePrice)
+linear_model = lm(formula = SalePrice ~ ., data = houses_clean)
+summary(linear_model)
+
+```
+
+<p dir="RTL">
+با توجه به مقدارهای p-value برای هر متغیر، در هر مرحله متغیر با بیشترین p-value را حذف میکنیم تا جایی که تمام متغیرها p-value کمتر از ۰.۰۱ داشته باشند.
+</p>
+
+
+***
+
+<p dir="RTL">
+۷. مدل خود را بر اساس باقی مانده نقص یابی کنید.
+سه محک 
+normality, independance, Constant Variance
+ را در نقص یابی خود در نظر بگیرید.
+</p>
+
+
+### Constant Variance
+
+<p dir="RTL">
+در اینجا با استفاده از پلات زیر، فرض ثابت بودن واریانس را بررسی میکنیم. در اینجا خط بنفش نشاندهندهی مدل خطی است که دلیل دو تکه بودن آن این است که در $Y$ های بسیار کم، مدل خطی عمل نکرده است. هرچند که تا مقدار حدود e+05 این مشکل پابرجاست. اما از لحاظ constant variance مدل نسبتا خوب است. چرا که خط چین کشیدهشده نسبت به خط رگرسیون نسبتاً صاف بوده و همچنین همانطور که از شکل مشخص است نقاط در xهای مختلف تقریبا یکسان پخش شدهاند. (به جز در حدود2e+05)
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+spreadLevelPlot(linear_model)
+```
+
+### Normality
+
+<p dir="RTL">
+با توجه به اینکه در qq-plot کشیده شده، نقاط اکثراً روی خط نرمال مشخص شدهی روی شکلاند و همچنین خطچینها نیز نزدیک به این خط اند میتوان به این نتیجه رسید که دادهها کاملاً نرمال توزیع شدهاند. همچنین روش دوم نیز این نمودار را تایید میکند.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+library("car")
+qqPlot(linear_model, id.method = "identify", simulate = TRUE, main="Q-Q Plot")
+
+library("MASS")
+sresid = studres(linear_model)
+hist(sresid, freq=FALSE, main = "Distribution of Studentized Residuals", breaks = 100)
+xfit = seq(min(sresid),max(sresid),length=10000)
+yfit = dnorm(xfit)
+lines(xfit, yfit)
+```
+
+
+### Independance
+
+
+<p dir=”RTL">
+برای تشخیص مستقل بودن errorها میتوان از نمودار residul بر اساس زمان اتفاق (یا مثلاً در اینجا شماره سطر) استفاده کرد. بهطوری که اگر در زمانهای مختلف دادهها یکسان پخش شده بودند، مستقلند.
+
+که در اینجا این شرط با توجه به نمودار برقرار بوده و شرط independence نیز برقرار است.
+</p>
+
+
+```{r}
+plot(linear_model$residuals)
+```
+
+
+***
+
+<p dir="RTL">
+۸. داده ها را به پنج قسمت تقسیم کنید. بر اساس چهار قسمت مدل خطی را بسازید و صحت مدل را برای یک قسمت 
+باقی مانده را تست کنید. خطای پیش بینی شما چقدر است؟
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+n = nrow(houses)
+train = houses %>% as.data.frame() %>% slice(1:(4*n/5 - 1))
+test = houses%>% as.data.frame() %>% slice((4*n/5):n)
+
+train %>% 
+  select_if(is.numeric) %>% 
+  cor(use = "complete.obs") -> cor_mat_numerics
+
+train %>% 
+  # subset(select = -Id) %>% 
+  select_if(is.numeric) %>% 
+  as.matrix() %>% 
+  rcorr() -> cor_numerics
+
+cor_mat = cor_numerics$r
+cor_pvals = cor_numerics$P
+
+as.data.frame(cor_mat) %>%
+  cbind(vars = row.names(cor_pvals), .) %>% 
+  arrange(-SalePrice) %>% 
+  slice(2:11) %>% 
+  dplyr::select(vars, SalePrice) -> related_vars
+
+train_clean = cbind(train[which(colnames(train) %in% related_vars$vars)], SalePrice = train$SalePrice)
+test_clean = cbind(test[which(colnames(test) %in% related_vars$vars)], SalePrice = test$SalePrice)
+
+train_model = lm(formula = SalePrice ~ ., data = train_clean)
+summary(train_model)
+
+test_plot = cbind(test_clean, Estimated = predict(train_model, test_clean, interval = "confidence") %>% as.vector())
+
+ggplot(data = test_plot, aes(x = SalePrice, y = Estimated)) +
+  geom_point(alpha = 0.5, color = "dark blue") + geom_abline(slope = 1) + theme_light()
+
+test_plot %>% 
+  mutate(sq = (SalePrice -Estimated)^2) %>% 
+  dplyr::select(sq) %>% as.vector() -> errs
+OLS = sum(errs)
+
+OLS
+```
+
+
+***
+
+<p dir="RTL"> 
+۹. آیا قیمت ربط غیر خطی با یکی از ده متغیر استفاده شده دارد؟
+بر اساس دستاوردهای خود مدل را بهتر نمایید.
+</p>
+
+<p dir="RTL">
+با توجه به نموداری همانند نمودار قسمت ۲ که در پیوست نیز آمدهاست، میتوان متغیرهایی که به نظر خطی نمیآیند را مجدداً بررسی و سپس طبق شکل ظاهری آنها در نمودار تصحیح کرد.
+در اینجا یک متغیر پیدا شدهاست ولی بقیهی متغیرها را نمیتوان به صورت مشخص گفت که با قیمت خطی نیستند. 
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+scatterplotMatrix(x = houses_clean, formula = SalePrice ~ .)
+
+ggplot(houses_clean, aes(x = OverallQual, y = SalePrice)) +
+  geom_point(alpha = 0.5, color = "dark blue") +
+  geom_smooth()
+fit = lm(formula = SalePrice ~ YearBuilt + YearRemodAdd + TotalBsmtSF + `1stFlrSF` + GrLivArea + FullBath + GarageCars +
+                                        poly(OverallQual, 3), data = houses_clean)
+summary(fit)
+houses_plot = cbind(houses_clean, Estimated = fitted(fit) %>% as.vector())
+ggplot(data = houses_plot, aes(x = SalePrice, y = Estimated)) +
+  geom_point(alpha = 0.5, color = "dark blue") + geom_abline(slope = 1) + theme_light()
+```
+
+***
+
+<p dir="RTL"> 
+۱۰. بر اساس مدل نهایی به دست آمده نتایج پیش بینی خود را بر روی
+test.csv
+به دست آورید و در سایت 
+kaggle
+ در مسابقه 
+ House Prices: Advanced Regression Techniques
+بارگذاری نمایید. سپس لینک رتبه و عدد آن را ضمیمه تمرین کنید.
+</p>
+
+rank = 3078
+score = 0.17171
+
+

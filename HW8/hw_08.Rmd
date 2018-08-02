@@ -1,0 +1,630 @@
+---
+title: "Eighth Week: Text Analysis in R"
+subtitle: "To be, or not to be"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/dickens1_1.png"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با استفاده از بسته gutenberg داده های لازم را به دست آورید و به سوالات زیر پاسخ دهید.
+</p>
+
+```{r include=FALSE, message=FALSE, warning=FALSE}
+library(tidyr)
+library(dplyr)
+library(gutenbergr)
+library(tidytext)
+library(tm)
+library(stringr)
+library(highcharter)
+# library(devtools)
+library(wordcloud2)
+library(ggplot2)
+library(RColorBrewer)
+library(forcats)
+library(ggthemes)
+```
+
+
+***
+
+<p dir="RTL">
+۱. چارلز دیکنز نویسنده معروف انگلیسی بالغ بر چهارده رمان (چهارده و نیم) نوشته است. متن تمامی کتاب های او را دانلود کنید و سپس بیست لغت برتر استفاده شده را به صورت یک نمودار ستونی نمایش دهید. (طبیعتا باید ابتدا متن را پاکسازی کرده و stopping words را حذف نمایید تا به کلماتی که بار معنایی مشخصی منتقل می کنند برسید.)
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ThePickwickPapers = gutenberg_download(580, meta_fields = "title")
+OliverTwist = gutenberg_download(730, meta_fields = "title")
+NicholasNickleby = gutenberg_download(967, meta_fields = "title")
+TheOldCuriosityShop = gutenberg_download(700, meta_fields = "title")
+BarnabyRudge = gutenberg_download(917, meta_fields = "title")
+MartinChuzzlewit = gutenberg_download(968, meta_fields = "title")
+DombeyandSon = gutenberg_download(821, meta_fields = "title")
+DavidCopperfield =gutenberg_download(766, meta_fields = "title")
+BleakHouse = gutenberg_download(1023, meta_fields = "title")
+HardTimes = gutenberg_download(786, meta_fields = "title")
+LittleDorrit = gutenberg_download(963, meta_fields = "title")
+ATaleofTwoCities = gutenberg_download(37, meta_fields = "title")
+GreatExpectations = gutenberg_download(1400, meta_fields = "title")
+OurMutualFriend = gutenberg_download(883, meta_fields = "title")
+TheMCysteryofEdwinDrood =gutenberg_download(564, meta_fields = "title")
+
+dickenslist = list()
+dickenslist[[1]] = ThePickwickPapers
+dickenslist[[2]] = OliverTwist
+dickenslist[[3]] = NicholasNickleby
+dickenslist[[4]] = TheOldCuriosityShop
+dickenslist[[5]] = BarnabyRudge
+dickenslist[[6]] = MartinChuzzlewit
+dickenslist[[7]] = DombeyandSon
+dickenslist[[8]] = DavidCopperfield
+dickenslist[[9]] = BleakHouse
+dickenslist[[10]] = HardTimes
+dickens <- bind_rows(dickenslist)
+
+# dickens <- gutenberg_download(c(580, 730, 967, 700, 917, 968, 821, 766, 1023, 786, 963, 7869, 1400, 883, 564),
+
+romans = as.character(as.roman(1:100)) %>% tolower()
+
+tidy_dickens <- dickens %>%
+  unnest_tokens(word, text) %>% 
+  mutate(word = str_replace(word, "'s", "")) %>% 
+  anti_join(stop_words) %>% 
+  filter(!word %in% romans)
+
+tidy_dickens %>% 
+  group_by(word) %>% 
+  summarise(freq = n()) %>% 
+  arrange(desc(freq)) -> freq_words
+
+hchart(freq_words[1:20, ], "column", hcaes(x = word, y = freq))
+
+freq_words %>% head(20) %>% 
+  ggplot(aes(x = reorder(word, freq), y = freq)) +
+  geom_col(alpha = 0.6, fill = "dark blue") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+***
+
+<p dir="RTL">
+۲. ابر لغات ۲۰۰ کلمه پرتکرار در رمان های چارلز دیکنز را رسم نمایید. این کار را با بسته wordcloud2 انجام دهید. برای دانلود می توانید به لینک زیر مراجعه کنید.
+</p>
+
+https://github.com/Lchiffon/wordcloud2
+
+<p dir="RTL">
+ با استفاده از عکسی که در ابتدا متن آمده ابر لغاتی مانند شکل زیر رسم کنید. (راهنمایی: از ورودی figpath در دستور wordcloud2 استفاده نمایید.مثالی در زیر آورده شده است.)
+</p>
+
+<div align="center">
+<img  src="images/tag-word-cloud-Che-Guevara.jpg"  align = 'center'>
+</div>
+
+
+```{r}
+wordcloud2(freq_words, figPath = "images/dickens.png", 
+           size = 0.4, color = "black")
+```
+
+
+***
+
+<p dir="RTL">
+۳. اسم پنج شخصیت اصلی در هر رمان دیکنز را استخراج کنید و با نموداری تعداد دفعات تکرار شده بر حسب رمان را رسم نمایید. (مانند مثال کلاس در رسم اسامی شخصیت ها در سری هر پاتر)
+</p>
+
+
+```{r}
+dickens_words <- dickens %>% unnest_tokens(word, text, to_lower = FALSE)
+
+dickens_names <- dickens_words %>% 
+  mutate(word = str_replace(word, "'s|'S", "")) %>%
+  filter(!tolower(word) %in% stop_words$word) %>%
+  filter(!tolower(word) %in% romans) %>% 
+  filter(str_detect(word, "[A-Z][a-z]+")) %>%
+  filter(!tolower(word) %in% dickens_words$word) %>% 
+  group_by(word, title) %>% 
+  summarise(n = n()) %>% 
+  ungroup() %>% 
+  group_by(title) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:5)
+
+hchart(dickens_names, "bar", hcaes(x = word, y = n, group = title))
+
+ggplot(dickens_names, aes(x = word, y = n)) +
+  geom_col(aes(fill = word), show.legend = FALSE) +
+  facet_wrap(~title, scale = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+***
+
+<p dir="RTL">
+۴.  در بسته tidytext داده ایی به نام sentiments وجود دارد که فضای احساسی لغات را مشخص می نماید. با استفاده از این داده نمودار ۲۰ لغت برتر negative و ۲۰ لغت برتر positive را در کنار هم رسم نمایید. با استفاده از این نمودار فضای حاکم بر داستان چگونه ارزیابی می کنید؟ (به طور مثال برای کتاب داستان دو شهر فضای احساسی داستان به ترتیب تکرر در نمودار زیر قابل مشاهده است.)
+</p>
+
+<div align="center">
+<img  src="images/sentiments.png"  align = 'center'>
+</div>
+
+```{r warning=FALSE, message=FALSE}
+# for all novels -----
+sent_words <- tidy_dickens %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+sent_words %>%
+  group_by(sentiment) %>%
+  slice(1:20) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% 
+  hchart("bar", hcaes(x = word, y = n, group = sentiment))
+
+sent_words %>%
+  group_by(sentiment) %>%
+  slice(1:20) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>% 
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(y = "Words Contribute to sentiment", x = NULL) +
+  coord_flip()
+
+# for each novel -----
+for(i in 1:length(dickenslist)) {
+  novel <- dickenslist[[i]]
+  novel %>%
+    group_by() %>% 
+    unnest_tokens(word, text) %>% 
+    mutate(word = str_replace(word, "'s", "")) %>% 
+    anti_join(stop_words) %>% 
+    filter(!word %in% romans) %>% 
+    inner_join(get_sentiments("bing")) %>%
+    count(word, sentiment, sort = TRUE) %>% 
+    group_by(sentiment) %>% 
+    slice(1:20) %>% 
+    mutate(word = reorder(word, n)) -> novel
+  
+    gplot = ggplot(novel, aes(x = reorder(word, n), y = n, fill = sentiment)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~sentiment, scales = "free_y") +
+    labs(y = c("Words Contribute to sentiment", i), x = NULL) +
+    coord_flip()
+    print(gplot)
+    # print(novel$title[1])
+}
+```
+
+<p dir="RTL">
+با توجه به نمودارهای رسمشده، میتوان دید در اکثر نمودارها لغات منفی بسیار بیشتر از مثبت بوده و بنابراین میتوان گفت برای اکثر کتابها فضای منفی قالب بوده.
+</p>
+
+
+
+***
+
+<p dir="RTL">
+۵. متن داستان بینوایان را به ۲۰۰ قسمت مساوی تقسیم کنید. برای هر قسمت تعداد لغات positive و negative را حساب کنید و سپس این دو سری زمانی را در کنار هم برای مشاهده فضای احساسی داستان رسم نمایید.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+# gutenberg_works(author == "Hugo, Victor") %>% View()
+
+lesmiserables <- gutenberg_download(c(48731, 48732, 48733, 48734, 48735))
+
+numberOfRows = nrow(lesmiserables) / 200
+
+lesmiserables %>% 
+  mutate(section = floor(row_number() / 200)) %>% 
+  unnest_tokens(word, text) %>% 
+  mutate(word = str_replace(word, "'s", "")) %>% 
+  anti_join(stop_words) %>% 
+  filter(!word %in% romans) %>% 
+  inner_join(get_sentiments("bing")) %>%
+  group_by(section, sentiment) %>% 
+  summarise(count = n()) %>% 
+  mutate(count = ifelse(sentiment == "positive", count, -1 * count)) %>% 
+  ggplot(aes(x = section, y = count, fill = sentiment)) +
+  geom_bar(stat = 'identity', position = position_dodge())
+
+```
+
+
+***
+
+<p dir="RTL">
+۶. ابتدا ترکیبات دوتایی کلماتی که پشت سر هم می آیند را استخراج کنید و سپس نمودار ۳۰ جفت لغت پرتکرار را رسم نمایید.
+</p>
+
+```{r}
+bigrams_dickens <- dickens %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+bigrams_separated <- bigrams_dickens %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigram_cnt <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>% 
+  count(word1, word2, sort = TRUE) %>% 
+  mutate(word = paste(word1, word2, " "))
+
+hchart(bigram_cnt[1:30, ], "column", hcaes(x = word, y = n))
+```
+
+
+***
+
+<p dir="RTL">
+۷. جفت کلماتی که با she و یا he آغاز می شوند را استخراج کنید. بیست فعل پرتکراری که زنان و مردان در داستان های دیکنز انجام می دهند را استخراج کنید و نمودار آن را رسم نمایید.
+</p>
+
+<p dir="RTL">
+با توجه به این که کلمههای بهدستآمده همگی فعلهایی هستند که باید در stop words باشند و احتمالاً برای she و he به طور یکسان آمدهاند، از نسبت log2(she / he) برای به دست آوردن کلمههایی که برای آنها به کار رفته شده استفاده میکنیم.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+mf_verbs <- bigrams_separated %>% 
+  filter(word1 == "she" | word1 == "he") %>% 
+  filter(!word2 %in% stopwords("english")) %>% 
+  count(word1, word2, sort = TRUE)
+
+hchart(mf_verbs %>% group_by(word1) %>% top_n(20), "column", hcaes(x = word2, y = n, group = word1))
+
+mf_verbs %>%
+  group_by(word2) %>%
+  filter(sum(n) > 10) %>%
+  ungroup() %>%
+  spread(word1, n, fill = 0) %>%
+  mutate(logratio = log2(she / he)) %>%
+  arrange(desc(logratio)) %>% 
+  mutate(abslogratio = abs(logratio)) %>%
+  group_by(logratio < 0) %>%
+  top_n(10, abslogratio) %>%
+  ungroup() %>%
+  arrange(desc(logratio)) %>%
+  mutate(word2 = fct_inorder(word2, ordered = TRUE)) %>% 
+  ggplot(aes(x = word2, y = logratio, color = logratio < 0)) + 
+  geom_pointrange(aes(ymin = 0, ymax = logratio)) +
+  coord_flip()
+```
+
+
+***
+
+<p dir="RTL">
+۸. برای کتاب های دیکنز ابتدا هر فصل را جدا کنید. سپی برای هر فصل 
+1-gram, 2-gram
+را استخراج کنید. آیا توزیع  N-gram
+در کارهای دیکنز یکسان است؟ با رسم نمودار هم این موضوع را بررسی کنید.
+</p>
+
+<p dir="RTL">
+ابتدا 1-grams و 2-grams را بهدست میآوریم. سپس برای هر یک از نمونههایش، برای هر chapter درصد هر n-gram را بهدست میآوریم (تعداد تکرار آن n-gram در chapter به کل n-gram های chapter) و نمودار چندتای برتر را رسم میکنیم.
+</p>
+
+
+```{r}
+dickens_chap <- dickens %>% 
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", ignore_case = TRUE))))
+
+# n = 1
+dickens_unigram <- dickens_chap %>% 
+  unnest_tokens(word, text) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  filter(!word %in% romans) %>% 
+  group_by(chapter, gutenberg_id) %>% 
+  mutate(wordsPerChap = n())
+
+unigram_distr <- dickens_unigram %>% 
+  filter(word != "NA") %>% 
+  group_by(gutenberg_id, chapter, word) %>% 
+  summarise(count = n() / mean(wordsPerChap)) %>% 
+  mutate(rank = rank(-count, ties.method = "first"))
+
+unigram_distr %>% 
+  filter(gutenberg_id == 580 , chapter == 100) %>% 
+  arrange(desc(count)) %>% slice(1:30) %>% 
+  ggplot(aes(x = reorder(word, count) , y = count)) + 
+  geom_bar(stat = "identity", fill = "dark blue", alpha = 0.6) +  
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+# n = 2
+dickens_bigram <- dickens_chap %>%  
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+bigrams_separated <- dickens_bigram %>%  
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  filter(!(word1 %in% stop_words$word)) %>%  
+  filter(!(word2 %in% stop_words$word))
+
+# with omited stop words
+bigrams_united <- bigrams_separated %>%  
+  unite(bigram, word1, word2, sep = " ") %>%
+  filter(bigram != "NA NA") %>% 
+  group_by(chapter, gutenberg_id) %>% 
+  mutate(wordsPerChap = n())
+
+bigram_distr <- bigrams_united %>% 
+  group_by(gutenberg_id, chapter, bigram) %>% 
+  summarise(count = n() / mean(wordsPerChap)) %>% 
+  mutate(rank = rank(-count, ties.method = "first"))
+
+bigram_distr %>% 
+  filter(gutenberg_id == 580, chapter == 100) %>% 
+  arrange(desc(count)) %>% slice(1:30) %>% 
+  ggplot(aes(x = reorder(bigram, count) , y = count)) + 
+  geom_bar(stat = "identity", fill = "dark blue", alpha = 0.6) +  
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+# n = 3
+dickens_chap %>% 
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%  
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%  
+  drop_na() %>% 
+  filter(!word1 %in% stop_words$word,         
+         !word2 %in% stop_words$word,         
+         !word3 %in% stop_words$word) -> trigram_seprated
+
+trigram_united <- trigram_seprated %>% unite(trigram, word1, word2, word3, sep = " ")
+  
+```
+
+
+***
+
+<p dir="RTL"> 
+۹. برای آثار ارنست همینگوی نیز تمرین ۸ را تکرار کنید. آیا بین آثار توزیع n-grams در بین آثار این دو نویسنده یکسان است؟
+</p>
+
+```{r warning=FALSE, message=FALSE}
+# gutenberg_works(author == "Austen, Jane") %>% View()
+austen <- gutenberg_download(c(105, 121, 141, 158, 161, 946, 1342), meta_fields = "title")
+
+# rep 8 for austen ---------
+austen_chap <- austen %>% 
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", ignore_case = TRUE))))
+
+# n = 1
+austen_unigram <- austen_chap %>% 
+  unnest_tokens(word, text) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  filter(!word %in% romans) %>% 
+  group_by(chapter, gutenberg_id) %>% 
+  mutate(wordsPerChap = n())
+
+unigram_distr_austen <- austen_unigram %>% 
+  filter(word != "NA") %>% 
+  group_by(gutenberg_id, chapter, word) %>% 
+  summarise(count = n() / mean(wordsPerChap)) %>% 
+  mutate(rank = rank(-count, ties.method = "first"))
+
+# n = 2
+austen_bigram <- austen_chap %>%  
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+bigrams_separated_austen <- austen_bigram %>%  
+  separate(bigram, c("word1", "word2"), sep = " ") %>% 
+  filter(!(word1 %in% stop_words$word)) %>%  
+  filter(!(word2 %in% stop_words$word))
+
+# with omited stop words
+bigrams_united_austen <- bigrams_separated_austen %>%  
+  unite(bigram, word1, word2, sep = " ") %>%
+  filter(bigram != "NA NA") %>% 
+  group_by(chapter, gutenberg_id) %>% 
+  mutate(wordsPerChap = n())
+
+bigram_distr_austen <- bigrams_united_austen %>% 
+  group_by(gutenberg_id, chapter, bigram) %>% 
+  summarise(count = n() / mean(wordsPerChap)) %>% 
+  mutate(rank = rank(-count, ties.method = "first"))
+
+```
+
+<p dir="RTL">
+ابتدا تمام توزیع 1-gram و 2-gram ها را همانند سوال قبل برای رمانهای جین آستین بهدست میآوریم.
+سپس برای بررسی اینکه آیا توزیع n-gram ها بین آثار این دو نویشنده یکی است یا خیر، ابتدا برای هردو این رمانها، 1-gram و 2-gram های برتر (با تعداد بیشتر) را بهدست میآوریم. سپس، آنها را در bikeywords و unikeywords ذخیره میکنیم تا برای قسمت بعد برای انتخاب ستونهای train و test نیز به آنها دسترسی داشته باشیم. 
+حال برای رمانهای این دو نویسنده، تعداد تمام این n-gram ها را با استفاده از دیتافریمهایی که قبلاً ساخته بودیم بهدست میآوریم. بنابراین ماتریسی خواهیم داشت که بهازای هر n-gram، مقدار آن را در توزیع دیکنز و آستین نشان میدهد. با توجه به اینکه نویسندهها و n-gramها categorial هستند، از آزمون فرض chi-squared استفاده میکنیم.
+</p>
+
+
+
+```{r warning=FALSE, message=FALSE}
+# chisq -----------
+
+bound = 30
+
+bigrams_united %>%  
+  filter(bigram != "NA NA") %>% 
+  group_by(bigram) %>% 
+  summarise(n1 = n()) %>% 
+  arrange(desc(n1)) %>% 
+  slice(1:bound) -> dickens_biwords
+bigrams_united_austen %>%  
+  filter(bigram != "NA NA") %>% 
+  group_by(bigram) %>% 
+  summarise(n2 = n()) %>% 
+  arrange(desc(n2)) %>% 
+  slice(1:bound) -> austen_biwords
+bikeywords <- full_join(dickens_biwords, austen_biwords)
+bikeywords[is.na(bikeywords)] = 0
+
+dickens_unigram %>%  
+  filter(word != "NA") %>% 
+  group_by(word) %>% 
+  summarise(n1 = n()) %>% 
+  arrange(desc(n1)) %>% 
+  slice(1:bound) -> dickens_uniwords
+austen_unigram %>%  
+  filter(word != "NA") %>% 
+  group_by(word) %>% 
+  summarise(n2 = n()) %>% 
+  arrange(desc(n2)) %>% 
+  slice(1:bound) -> austen_uniwords
+unikeywords <- full_join(dickens_uniwords, austen_uniwords)
+unikeywords[is.na(unikeywords)] = 0
+
+mat = full_join(bigrams_united %>% 
+            filter(bigram %in% bikeywords$bigram) %>%
+            group_by(bigram) %>% 
+            summarise(count1 = mean(wordsPerChap, na.rm = T)),
+          bigrams_united_austen %>% 
+            filter(bigram %in% bikeywords$bigram) %>%
+            group_by(bigram) %>% 
+            summarise(count2 = mean(wordsPerChap, na.rm = T)), by = "bigram", all.x = TRUE) %>% 
+  # mutate(count1 = ifelse(is.na(count1), 0, count1)) %>% 
+  # mutate(count2 = ifelse(is.na(count2), 0, count2)) %>% 
+  select(-bigram) %>% as.matrix()
+mat[is.na(mat)] = 0
+mat = mat[-nrow(mat), ]
+
+chisq.test(mat)
+
+```
+
+
+<p dir="RTL">
+با توجه به مقدار بهدستآمده برای آزمون فرض میتوان گفت n-gram ها در تشخیص نویسنده بسیار بهکار میآیند. (این آزمون فقط برای 2-gram بهدستآمده، به همین ترتیب برای 1-gram قابل انجام است.)
+</p>
+
+
+***
+
+<p dir="RTL"> 
+۱۰. بر اساس دادهایی که در تمرین ۸ و ۹ از آثار دو نویسنده به دست آوردید و با استفاده از  N-gram ها یک مدل لاجستیک برای تشخیص صاحب اثر بسازید. خطای مدل چقدر است؟ برای یادگیری مدل از کتاب کتاب الیور تویست اثر دیکنز و کتاب پیرمرد و دریا استفاده نکنید. پس از ساختن مدل برای تست کردن فصل های این کتابها را به عنوان داده ورودی به مدل بدهید. خطای تشخیص چقدر است؟
+</p>
+
+
+<p dir="RTL">
+دیتافریم train را به این گونه میسازیم که نمونههای ما، سطرهایی از مقدار توزیع n-gramها در هر فصل و کتابند. و خروجی ۰ یا ۱ برای دیکنز یا آستن.
+</p>
+
+
+```{r warning=FALSE, message=FALSE}
+bigram_distr %>% 
+  filter(gutenberg_id != 730) %>% 
+  filter(bigram %in% bikeywords$bigram) %>% 
+  select(gutenberg_id, chapter, bigram, count) %>% 
+  spread(key = bigram, value = count) -> train_dickens_bi
+unigram_distr %>% 
+  filter(gutenberg_id != 730) %>% 
+  filter(word %in% unikeywords$word) %>% 
+  select(gutenberg_id, chapter, word, count) %>% 
+  spread(key = word, value = count) -> train_dickens_uni
+train_dickens = inner_join(train_dickens_bi, train_dickens_uni, by = c("gutenberg_id", "chapter")) %>% 
+  ungroup() %>% 
+  select(-c(gutenberg_id, chapter))
+train_dickens[is.na(train_dickens)] = 0
+train_dickens$author = 1 # dickens : y = 1
+
+bigram_distr_austen %>% 
+  filter(gutenberg_id != 1342) %>% 
+  filter(bigram %in% bikeywords$bigram) %>% 
+  select(gutenberg_id, chapter, bigram, count) %>% 
+  spread(key = bigram, value = count) -> train_austen_bi
+unigram_distr_austen %>% 
+  filter(gutenberg_id != 1342) %>% 
+  filter(word %in% unikeywords$word) %>% 
+  select(gutenberg_id, chapter, word, count) %>% 
+  spread(key = word, value = count) -> train_austen_uni
+train_austen = inner_join(train_austen_bi, train_austen_uni, by = c("gutenberg_id", "chapter")) %>% 
+  ungroup() %>% 
+  select(-c(gutenberg_id, chapter))
+train_austen[is.na(train_austen)] = 0
+train_austen$author = 0 # austen : y = 0
+
+plyr::rbind.fill(train_austen, train_dickens) -> train
+train[is.na(train)] = 0
+```
+
+<p dir="RTL">
+حال با استفاده از کتابخانهی h20، میتوان روی این دیتافریم، مدلی لاجستیک برای تشخیص خروجی binomial (نویسنده) ساخت. که همانطور که در summary مدل آمدهاست، پارامترهای خطای آن مانند MSE، RMSE، LogLoss، Residual deviance و … همگی مقادیری مناسب دارند و میتوان گفت مدل خوبی بهدست آمده است.
+</p>
+
+
+```{r warning=FALSE, message=FALSE}
+library(h2o)
+h2o.init()
+htrain = as.h2o(train)
+colnames_train = colnames(train %>% select(-author))
+hglm = h2o.glm(y = "author", x = colnames_train,
+               training_frame = htrain, family = "binomial")
+# model error
+summary(hglm)
+```
+
+<p dir="RTL">
+سپس دادهی تست را همانند train با کتابهای مربوطه میسازیم. و همانطور که آمدهاست، درصد خطای تشخیص نویسنده برای این داده، ۲٪ است. که نشان میدهد مدل بسیار خوب جواب میدهد.
+</p>
+
+```{r warning=FALSE, message=FALSE, results='markup'}
+bigram_distr %>% 
+  filter(gutenberg_id == 730) %>% 
+  filter(bigram %in% bikeywords$bigram) %>% 
+  select(gutenberg_id, chapter, bigram, count) %>% 
+  spread(key = bigram, value = count) -> test_dickens_bi
+unigram_distr %>% 
+  filter(gutenberg_id == 730) %>% 
+  filter(word %in% unikeywords$word) %>% 
+  select(gutenberg_id, chapter, word, count) %>% 
+  spread(key = word, value = count) -> test_dickens_uni
+test_dickens = inner_join(test_dickens_bi, test_dickens_uni, by = c("gutenberg_id", "chapter")) %>% 
+  ungroup() %>% 
+  select(-c(gutenberg_id, chapter))
+test_dickens[is.na(test_dickens)] = 0
+n_dickens = nrow(test_dickens)
+
+
+bigram_distr_austen %>% 
+  filter(gutenberg_id == 1342) %>% 
+  filter(bigram %in% bikeywords$bigram) %>% 
+  select(gutenberg_id, chapter, bigram, count) %>% 
+  spread(key = bigram, value = count) -> test_austen_bi
+unigram_distr_austen %>% 
+  filter(gutenberg_id == 1342) %>% 
+  filter(word %in% unikeywords$word) %>% 
+  select(gutenberg_id, chapter, word, count) %>% 
+  spread(key = word, value = count) -> test_austen_uni
+test_austen = inner_join(test_austen_bi, test_austen_uni, by = c("gutenberg_id", "chapter")) %>% 
+  ungroup() %>% 
+  select(-c(gutenberg_id, chapter))
+test_austen[is.na(test_austen)] = 0
+n_austen = nrow(test_austen)
+
+test = full_join(test_dickens, test_austen)
+
+diff = setdiff(colnames_train, colnames(test)) 
+test = cbind(test, setNames(lapply(diff, function(x) x = NA), diff))
+test[is.na(test)] <- 0
+htest = as.h2o(test)
+
+predict <- as.data.frame(h2o.predict(hglm, htest))
+cbind(test, predict %>% select(predict)) -> test
+
+test$answer = integer(nrow(test))
+test$answer[1:n_dickens] <- 1
+
+# diagnosis error
+sum(test$predict != test$answer) / nrow(test)
+```
+
+

@@ -1,0 +1,581 @@
+---
+title: "Third Week: Exploratory Data Analysis"
+subtitle: "LaLiga Analysis"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/laliga-lo.jpg"  align = 'center'>
+</div>
+
+<h1 dir="RTL"> 
+تمرین سری سوم: از لالیگا تا لیگ برتر
+</h1>
+
+> <p dir="RTL"> 
+با استفاده از داده های لیگ دسته اول اسپانیا به سوالات زیر پاسخ دهید.
+از هر دو ابزار
+ggplot2
+و
+highcharter
+برای این کار تصویرسازی استفاده نمایید.
+</p>
+
+***
+```{r echo=FALSE,message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(devtools)
+library(highcharter)
+library(ggplot2)
+library(engsoccerdata)
+library(kableExtra)
+library(knitr)
+# knitr::opts_chunk$set(eval = FALSE)
+```
+
+<p dir="RTL">
+در ابتدا جدول لیگ را برای هریک از تیمها میسازیم. همچنین جدولی از وضعیت تیمها در هر تاریخ و وضعیت بازی انجامشده در آن تاریخ را میسازیم تا در قسمتهای بعد کارمان راحتتر شود.
+</p>
+
+
+```{r warning=FALSE, message=FALSE}
+data(package="engsoccerdata")
+laliga = as.tbl(spain)
+
+rbind(
+  laliga %>% 
+    select(Date, Season, team = home, opp = visitor, GF = hgoal, GA = vgoal),
+  laliga %>% 
+    select(Date, Season, team = visitor, opp = home, GF = vgoal, GA = hgoal)
+) %>% 
+  mutate(GD = GF - GA, score = (GD > 0) * 3 + (GD == 0)) -> games
+
+games %>% 
+  select(Season, team) %>% 
+  group_by(Season) %>% 
+  distinct() %>% 
+  summarise(n = n()) %>% 
+  spread(key = Season, value = n) %>% 
+  as.vector() -> teams_number
+
+head(games)
+
+# GD
+games %>% 
+  select(Season, Date, team, GD) %>% 
+  spread(team, GD, fill = 0) -> GD_table
+GD_table %>% 
+  gather(key = "team", value = "GD", colnames(.)[3:ncol(.)]) %>% 
+  arrange(Date) -> GD_df
+GD_df %>% 
+  group_by(Season, team) %>%
+  mutate(total_GD = cumsum(GD)) %>% 
+  arrange(team, Season, Date) -> GD_df
+# total score (and gained score of Date)
+games %>% 
+  select(Season, Date, team, score) %>% 
+  spread(team, score, fill = 0) -> score_table
+score_table %>% 
+  gather(key = "team", value = "score", colnames(.)[3:ncol(.)]) %>% 
+  arrange(Date) -> score_df
+score_df %>% 
+  group_by(Season, team) %>%
+  mutate(total_score = cumsum(score)) %>% # total socre
+  arrange(team, Season, Date) -> score_df
+# number of matches (and if the game had any matches on that day)
+games %>% 
+  select(Season, Date, team) %>% 
+  mutate(played = 1) %>% 
+  spread(team, played, fill = 0) -> matches_table
+matches_table %>% 
+  gather(key = "team", value = "team_games", colnames(.)[3:ncol(.)]) %>% 
+  arrange(Date) -> matches_df
+matches_df %>% 
+  group_by(Season, team) %>% 
+  mutate(matches_no = cumsum(team_games)) -> matches_df
+
+games_df = full_join(full_join(score_df, GD_df), matches_df)
+
+games_df %>% 
+  group_by(Season, Date) %>% 
+  mutate(rank = as.integer(rank(-total_score, -total_GD, ties.method = 'first'))) %>% 
+  arrange(Season, Date, rank) -> games_df
+head(games_df)
+
+```
+
+
+***
+
+<p dir="RTL">
+۱. تعداد قهرمانی های تیم ها در تاریخ لالیگا  را استخراج کرده و نمودار ستونی آنها را رسم کنید.
+</p>
+
+```{r}
+games %>% 
+  group_by(team, Season) %>% 
+  summarise(score = sum(GD == 0) + sum(GD > 0) * 3) %>% 
+  group_by(Season) %>% 
+  slice(which.max(score)) %>% 
+  group_by(team) %>% 
+  summarise(wins = n()) %>% 
+  arrange(wins) -> winners
+ggplot(data = winners, mapping = aes(x = reorder(team, wins), y = wins)) + 
+  geom_bar(stat = "identity", color = "black", fill = "dark blue", alpha  = 0.4) + xlab("Team Name") + 
+  ggtitle("Number of Championships") +
+  theme(axis.text.x=element_text(angle=45, vjust=0.5))
+
+hchart(winners, "column", hcaes(x = team, y = wins)) %>% 
+  hc_add_theme(hc_theme_ffx())
+```
+
+
+***
+
+<p dir="RTL">
+۲. کسل کننده ترین لیگ و تیم را بیابید.
+نمودار ده تیم و ده فصل کسل کننده را رسم کنید.
+</p>
+
+```{r}
+laliga %>% 
+  group_by(Season) %>% 
+  summarise(goals = sum(vgoal + hgoal), games = n()) %>% 
+  mutate(boringness = goals / games) %>% 
+  arrange(boringness) %>%
+  slice(1:10) -> boring_seasons
+boring_seasons %>% 
+  kable("markdown")
+
+ggplot(boring_seasons, aes(x = reorder(factor(Season), boringness), y = boringness, fill = goals)) + 
+  geom_bar(stat = "identity", color = "black", alpha  = 0.7) + coord_flip()
+
+hchart(boring_seasons, "bar", hcaes(x = factor(Season), y = boringness)) %>% 
+  hc_add_theme(hc_theme_ffx())
+
+games %>% 
+  group_by(team) %>% 
+  summarise(totaleqs = sum(GD == 0) , games = n()) %>%
+  mutate(boringness = totaleqs / games) %>% 
+  arrange(boringness) %>% 
+  slice(1:10) -> boring_teams
+boring_teams %>% 
+  kable("markdown")
+
+ggplot(boring_teams, aes(x = reorder(team, boringness), y = boringness, fill = totaleqs)) + 
+  geom_bar(stat = "identity", color = "black", alpha  = 0.4) + coord_flip()
+
+hchart(boring_teams, "bar", hcaes(x = factor(team), y = boringness)) %>% 
+  hc_add_theme(hc_theme_ffx())
+```
+
+
+***
+
+<p dir="RTL">
+۳. در چند درصد موارد قهرمان نیم فصل در پایان فصل قهرمان شده است؟
+</p>
+
+
+
+<p dir="RTL">
+نیمفصل معادل جایی است که هر دو تیم یکبار باهم بازی کردهاند. بنابراین یکبار بازی اول بین هر دو تیم را جدا کرده و یکبار هم در کل قهرمان را بهدست میآوریم.
+</p>
+
+
+```{r}
+games %>% 
+  arrange(Season, team, opp) %>% 
+  filter(as.integer(rownames(.)) %% 2 == 1) %>% 
+  group_by(Season, team) %>% 
+  summarise(points = sum(score))  %>% 
+  group_by(Season) %>% 
+  slice(which.max(points)) -> first_half_games
+
+games %>% 
+  arrange(Season, team, opp) %>%  
+  group_by(Season, team) %>% 
+  summarise(points = sum(score))  %>% 
+  group_by(Season) %>% 
+  slice(which.max(points)) -> all_games
+
+eq_percent = length(which(first_half_games$team == all_games$team)) / length(all_games$team)
+print(eq_percent)
+```
+
+
+***
+
+<p dir="RTL">
+۴. در بین سال های ۲۰۰۱ تا ۲۰۱۰ گربه سیاه تیم های بزرگ چه تیم هایی بوده است؟
+</p>
+
+```{r}
+blackcats = NULL
+for(s in 2001:2012) {
+  games_df %>% 
+    filter(Season == as.integer(s)) %>% 
+    group_by(team) %>% 
+    filter(max(matches_no) != 0) %>% 
+    filter(matches_no == max(matches_no)) %>%
+    group_by() %>% 
+    arrange(rank) %>% 
+    select(team, total_score, total_GD, rank) -> season_ranking
+  season_ranking %>% filter(rank < 5) %>% select(team) %>% unique() -> big_teams
+  season_ranking %>% filter(nrow(.) - rank < 3 / 4 * nrow(.)) -> ord_teams
+  rbind(
+  games %>% 
+    filter(Season == as.integer(s)) %>% 
+    filter(team %in% ord_teams$team) %>% 
+    group_by() %>% 
+    filter(score == 3 & opp %in% big_teams$team) %>% 
+    filter(GD == max(GD)) %>%
+    mutate(blackcat = team) %>% 
+    select(Season, blackcat, opp, GD), blackcats) -> blackcats
+}
+kable(blackcats, "html")
+```
+
+
+***
+
+<p dir="RTL">
+۵. در تاریخ لالیگا کدام تیم رکورددار زودترین قهرمانی است؟
+همچنین کدام تیم مقتدرانه ترین قهرمانی را داشته است؟
+</p>
+
+```{r}
+games_df %>% 
+  mutate(n = as.integer(teams_number[as.character(Season)])) %>% 
+  filter(matches_no != 0) %>% 
+  filter(rank == 1 | rank == 2) %>% 
+  mutate(score_dif = max(total_score) - min(total_score)) %>%
+  filter(rank == 1) %>% 
+  mutate(games_left = 2 * (n - 2) - matches_no) %>% 
+  mutate(championship = score_dif / games_left) %>% 
+  arrange(Season, Date) -> seasons_winners
+
+# early winner
+seasons_winners %>% 
+  group_by() %>% 
+  filter(championship > 3) %>% 
+  slice(which.max(games_left)) %>% 
+  select(Season, Date, team, total_score, total_GD, games_left, score_dif) %>% 
+  kable("markdown")
+seasons_winners %>% 
+  group_by() %>% 
+  filter(games_left > 0) %>% 
+  slice(which.max(championship)) %>% 
+  select(Season, Date, team, total_score, total_GD, games_left, score_dif) %>% 
+  kable("markdown")
+```
+
+
+***
+
+<p dir="RTL">
+۶. طولانی ترین نوار پیروزی مساوی و شکست مال چه تیم هایی است؟
+</p>
+
+```{r}
+# longest contigous wins
+games_df %>% 
+  group_by(Season, team) %>% 
+  filter(team_games == 1) %>% 
+  arrange(Season, team, Date) %>% 
+  mutate(won = as.integer(score == 3)) %>% 
+  mutate(seq_no = sequence(rle(won)$lengths)) %>% 
+  group_by() %>% 
+  slice(which.max(won * seq_no)) %>% 
+  select(Season, Date, team, seq_no, matches_no, total_score, total_GD) %>% 
+  kable("markdown")
+
+# longest contigous loses
+games_df %>% 
+  group_by(Season, team) %>% 
+  filter(team_games == 1) %>% 
+  arrange(Season, team, Date) %>% 
+  mutate(lost = as.integer(score == 0)) %>% 
+  mutate(seq_no = sequence(rle(lost)$lengths)) %>% 
+  group_by() %>% 
+  slice(which.max(lost * seq_no)) %>% 
+  select(Season, Date, team, seq_no, matches_no, total_score, total_GD) %>% 
+  kable("markdown")
+```
+
+
+***
+
+<p dir="RTL">
+۷. زودترین سقوط مال کدام تیم بوده است؟
+</p>
+
+```{r}
+games_df %>% 
+  mutate(n = as.integer(teams_number[as.character(Season)])) %>% 
+  filter(matches_no != 0) %>% 
+  filter(rank == n | rank == n - 4) %>% 
+  mutate(score_dif = max(total_score) - min(total_score)) %>%
+  filter(rank == n) %>% 
+  mutate(games_left = 2 * (n - 2) - matches_no) %>% 
+  mutate(losing = score_dif / games_left) %>% 
+  filter(losing > 3) %>% 
+  group_by() %>% 
+  slice(which.max(games_left)) %>% 
+  select(Season, Date, team, total_score, total_GD, games_left, score_dif) %>% 
+  kable("markdown")
+
+```
+
+
+***
+
+<div align="center">
+<img  src="images/standings.png"  align = 'center'>
+</div>
+
+<p dir="RTL">
+مانند شکل بالا تصویری از روند تغییر رتبه تیم ها در طول فصل ۱۹۹۸ رسم نمایید.
+</p>
+
+```{r}
+games_df %>% 
+  group_by() %>% 
+  filter(Season == "1998") %>%  
+  group_by(Date) %>% 
+  summarise() %>%
+  mutate(day_no = row_number()) %>% 
+  filter(day_no %% 7 == 0) %>% 
+  mutate(week_no = row_number()) -> weeks_1998
+
+games_df %>% 
+  group_by() %>% 
+  filter(matches_no != 0) %>% 
+  filter(Season == "1998") %>% 
+  filter(Date %in% weeks_1998$Date) %>% 
+  arrange(team, Date) %>% 
+  select(Date, team, rank) %>% 
+  hchart("line", hcaes(x = as.character(Date), y = rank, group = team)) %>% 
+  hc_yAxis(reversed = TRUE)
+
+games_df %>% 
+  group_by() %>% 
+  filter(matches_no != 0) %>% 
+  filter(Season == "1998") %>% 
+  filter(Date %in% weeks_1998$Date) %>% 
+  arrange(team, Date) -> stat
+
+ggplot(stat, aes(x = Date, y = rank, color = team)) + geom_line() +
+  scale_y_reverse(c(20, 0))
+
+```
+
+
+
+***
+
+<div align="center">
+<img  src="images/bd_10.gif"  align = 'center'>
+</div>
+
+<p dir="RTL">
+۹. جدولی مشابه بالا برای فصل ۲۰۱۲ از  کل نتایج طراحی کنید.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+laliga %>% 
+  filter(Season == "2012") %>% 
+  select(home, visitor, HT) %>% 
+  arrange(home, visitor) %>% 
+  spread(key = visitor, value = HT, fill = 0) -> HT_df
+laliga %>% 
+  filter(Season == "2012") %>% 
+  select(home, visitor, FT) %>% 
+  arrange(home, visitor) %>% 
+  spread(key = visitor, value = FT, fill = 0) -> FT_df
+
+matches_table = full_join(HT_df, FT_df)
+colnames(matches_table)[1] = "Teams"
+
+print(matches_table)
+
+matches_table %>% .[,-1] %>% as.matrix() -> tmp
+rownames(tmp) = matches_table$Teams
+matches_table = tmp
+
+matches_mat = reshape2::melt(matches_table)
+
+library(scales)
+ggplot(matches_mat, aes(Var1, Var2, fill = factor(value))) + 
+  geom_tile(colour = "white", size = 1, family = "bold", stat = "identity", height = 1, width = 1) + 
+  geom_text(data = matches_mat, aes(Var1, Var2, label = value), color = "black", size = rel(3)) +
+  coord_flip() +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  # scale_y_discrete(position = "top") +
+  xlab("") + 
+  ylab("") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(fill=NA, color="white", size=0.5, linetype="solid"),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(), 
+    axis.text = element_text(color = "black", size=rel(1)),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    legend.position = "none",
+    axis.text.x = element_text(angle = -45, vjust = 1, hjust = 0)        
+  )
+```
+
+
+***
+
+<p dir="RTL">
+۱۰. سه آماره به همراه نمودار فردوسی پسند استخراج کنید.
+</p>
+
+
+<p dir="RTL">
+تعدادی جفت تیم خاص مشاهده شدهاند که بازیهایشان عجیب است. بازی عجیب را بازی رفت و برگشتی تعریف میکنیم که اختلاف گل زدهی تیمها بیش از ۶ باشد. یعنی در این جفت بازی، عملکرد دو تیم کاملا متفاوت بوده. حال کل جفت بازیهای عجیبی که بارها تکرار شدهاند را مییابیم. 
+بار رسم نمودار این تیمها متوجه میشویم که اکثر این جفت تیمها با دیگر جفتتیمهایی که بازی عجیب از خود نشان دادهاند نیز جفت بازی عجیب داشتهاند.
+</p>
+
+```{r message=FALSE}
+games %>%
+  arrange(Season, team, opp) %>%
+  filter(as.integer(rownames(.)) %% 2 == 1) %>%
+  select(-c(score, Date)) -> first_half_games
+
+games %>%
+  arrange(Season, team, opp) %>%
+  filter(as.integer(rownames(.)) %% 2 == 0) %>%
+  mutate(GF2 = GF, GA2 = GA, GD2 = GD) %>%
+  select(Season:opp, GF2:GD2) -> second_half_games
+
+both_games = full_join(first_half_games, second_half_games)
+
+both_games %>%
+  mutate(goal_diffrence = GD - GD2) %>%
+  filter(abs(goal_diffrence) >= 6) %>%
+  group_by(team, opp) %>% 
+  summarise(n = n(), year = round(mean(as.integer(Season)))) %>% 
+  filter(n > 5) -> wierd_games
+
+ggplot(wierd_games, aes(team, opp)) + 
+  geom_point(aes(size = n, color = year)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+***
+
+<p dir="RTL">
+بازی حساس بازیای است که ممکن است قهرمان فصل را تغییر دهد و اواخر فصل صورت میگیرد. یعنی اگر اواخر فصل دو تیم باهم بازی داشته باشند که در صدر جدول (بین ۳ تای اول) باشند و امکان عوض شدن جای آنها باشد (اختلاف امتیاز کمی داشته باشند)، بازی حساس محسوب میشود. براین اساس فصلهای با بیشترین بازیهای حساس و جفتتیمهای با بیشترین تعداد بازیهای حساس در تاریخ پیدا شدهاند.
+</p>
+
+```{r eval=TRUE}
+games %>% 
+  group_by(Season) %>% 
+  filter(row_number() > 4 / 5 * max(row_number())) %>%
+  mutate(team_rank = 0,
+         opp_rank = 0,
+         score_dif = 0) -> enhanced_games
+
+for(i in 1:nrow(enhanced_games)) {
+  d = enhanced_games$Date[i]
+  t = enhanced_games$team[i]
+  opp = enhanced_games$opp[i]
+  games_df %>% 
+    group_by() %>% 
+    filter(Date == d & team == t) %>% 
+    select(rank, total_score) %>% as.integer() -> team_stat
+  games_df %>% 
+    group_by() %>% 
+    filter(Date == d & team == opp) %>% 
+    select(rank, total_score) %>% as.integer() -> opp_stat
+  enhanced_games$opp_rank[i] = opp_stat[1]
+  enhanced_games$team_rank[i] = team_stat[1]
+  enhanced_games$score_dif[i] = team_stat[2] - opp_stat[2]
+}
+```
+
+```{r eval=TRUE}
+enhanced_games %>% 
+  filter(abs(score_dif) < 4) %>% 
+  filter(team_rank < 4 & opp_rank < 4) -> critical_games
+
+critical_games %>% 
+  mutate(team_id = ifelse(team < opp, team, opp),
+         opp_id = ifelse(team < opp, opp, team)) %>% 
+  group_by(team_id, opp_id) %>% 
+  summarise(games_number = n(), score_dif = abs(mean(score_dif))) %>% 
+  filter(games_number > 2) %>% 
+  mutate(duo = paste(team_id, opp_id, sep = " - ")) %>% 
+  arrange(-games_number) -> critical_duos
+
+hchart(critical_duos, "bar", hcaes(x = duo, y = games_number)) %>% 
+  hc_add_theme(hc_theme_ffx())
+
+ggplot(critical_duos, aes(x = reorder(duo, games_number), y = games_number)) +
+  geom_bar(stat = "identity", aes(fill = score_dif), alpha = 0.7) + coord_flip()
+
+critical_games %>% 
+  group_by(Season) %>% 
+  summarise(n = n()) %>% 
+  filter(n == max(n)) %>% 
+  select(Season)
+```
+
+***
+
+<p dir="RTL">
+تاثیر بازی در خانه در نتیجهی بازی جفت تیمها
+</p>
+
+```{r}
+rbind(
+  laliga %>% 
+    select(Date, Season, team = home, opp = visitor, GF = hgoal, GA = vgoal) %>% 
+    mutate(playground = "H"),
+  laliga %>% 
+    select(Date, Season, team = visitor, opp = home, GF = vgoal, GA = hgoal) %>% 
+    mutate(playground = "V")
+) %>% 
+  mutate(GD = GF - GA, score = (GD > 0) * 3 + (GD == 0)) -> games
+
+games %>% 
+  group_by(team, playground) %>% 
+  summarise(mean_score = mean(score),
+            wins = sum(GD > 0), eqs = sum(GD == 0), loses = sum(GD < 0),
+            mean_GD = mean(GD), games_no = n()) %>% 
+  group_by(team) %>% 
+  mutate(score_dif = max(mean_score) - min(mean_score), 
+         GD_dif = max(mean_GD) - min(mean_GD)) %>% 
+  select(team, score_dif, GD_dif) %>% unique() %>% 
+  arrange(score_dif, GD_dif) -> hvsv
+  # filter(score_dif >= 1) %>% 
+
+
+hchart(hvsv, "bar", hcaes(x = team, y = score_dif, color = GD_dif))
+ggplot(hvsv, aes(x = reorder(team, -score_dif), y = score_dif)) + 
+  geom_bar(color = "dark blue", alpha= 0.4, stat = "identity") + coord_flip()
+```
+
+<p dir="RTL">
+توزیع اختلاف امتیاز نتیجهی بازی در خانه و خانهی حریف:
+</p>
+
+```{r}
+ggplot(hvsv, aes(x = score_dif)) + geom_density(fill = "dark blue", alpha= 0.4)
+
+```
+
+
+

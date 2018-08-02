@@ -1,0 +1,326 @@
+---
+title: "second week: Introduction to R and Rstudio"
+subtitle: "Mobile Data"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/smartphones.jpg"  align = 'center'>
+</div>
+
+<h1 dir="RTL"> 
+تمرین سری دوم: تلفن همراه شناسی!
+</h1>
+
+> <p dir="RTL"> 
+ با استفاده از داده های گوشی های همراه به سوالات زیر پاسخ دهید. 
+برای رسم نمودار از پکیج 
+ggplot2
+استفاده کنید.
+</p>
+
+***
+
+<p dir="RTL">
+۱. کدام شرکت بیشترین تعداد گوشی را تولید کرده است؟
+نمودار ستونی ۲۰ شرکت برتر بر حسب تعداد گوشی تولید کرده را رسم کنید.
+</p>
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library("readr")
+library("dplyr")
+library("ggplot2")
+
+mobile = read_csv("mobile_data.csv")
+
+```
+
+```{r}
+mobile %>% group_by(company) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number)) %>% 
+  filter(row_number() <= 20) -> top_companies_stat
+print(top_companies_stat$company[1])
+
+ggplot(data = top_companies_stat, mapping = aes(x = reorder(company, number), y = number)) + 
+  geom_bar(stat = "identity", color = "black", fill = "red",alpha  = 0.3) + xlab("Company") + 
+  ggtitle("Companies with Most Mobile Models") + coord_flip()
+```
+
+***
+
+<p dir="RTL">
+۲. نمودار زمانی طول عرض  ضخامت و کیفیت دوربین گوشی ها را بکشید
+ و به نمودار هر یک مدل خطی اضافه کنید.
+</p>
+
+```{r}
+# length - time
+ggplot(data = mobile, mapping = aes(x = year, y = dim_length)) + 
+  geom_point(color = "dark blue", alpha = 0.1, size = 3, na.rm = TRUE) + 
+  geom_smooth(method = "lm", na.rm = TRUE) +
+  ggtitle("Mobile Length Over the Years")
+# breadth - time
+ggplot(data = mobile, mapping = aes(x = year, y = dim_breadth)) + 
+  geom_point(color = "dark blue", alpha = 0.1, size = 3, na.rm = TRUE) + 
+  geom_smooth(method = "lm", na.rm = TRUE) +
+  ggtitle("Mobile Breadth Over the Years")
+# thickness - time
+ggplot(data = mobile, mapping = aes(x = year, y = dim_thickness)) + 
+  geom_point(color = "dark blue", alpha = 0.1, size = 3, na.rm = TRUE) + 
+  geom_smooth(method = "lm", na.rm = TRUE) +
+  ylim(0, 50) +
+  ggtitle("Mobile Thickness Over the Years")
+# camera - time
+ggplot(data = mobile, mapping = aes(x = year, y = cam_px)) + 
+  geom_point(color = "dark blue", alpha = 0.1, size = 3, na.rm = TRUE) + 
+  geom_smooth(method = "lm", na.rm = TRUE) +
+  xlim(2000, 2017) +
+  ylim(0, 25) +
+  ggtitle("Mobile Camera Quality Over the Years")
+
+```
+
+***
+
+<p dir="RTL">
+۳. نمودار ستونی متوسط قیمت گوشی بر حسب تعداد سیم کارت و دسترسی به 
+LTE
+را رسم نمایید.
+</p>
+
+```{r}
+mobile %>% group_by(sim_no, LTE) %>% 
+  summarise(average = mean(price, na.rm = TRUE)) -> sim_stat
+
+ggplot(data = sim_stat, mapping = aes(x = sim_no, y = average)) + 
+  geom_bar(aes(fill = LTE), alpha  = 0.7, stat = "identity", position = "dodge", color = "black") +
+  xlab("Sim Number") + ylab("Average Price")
+```
+
+***
+
+<p dir="RTL">
+۴. نمودار جعبه ایی ضحامت گوشی هایی که در سال ۲۰۱۷ معرفی شده اند را برحسب اینکه کمیت جک هدفون رسم نمایید
+</p>
+
+```{r warning=FALSE}
+mobile %>% group_by(audio_jack) %>% 
+  filter(year == 2017) -> thickness_stat
+
+ggplot(data = thickness_stat, mapping = aes(x = audio_jack, y = dim_thickness)) +
+  geom_boxplot(aes(fill = audio_jack)) +# coord_flip() +
+  ylim(5, 16) +
+  xlab("Audio Jack") + ylab("Thickness")
+```
+
+***
+
+<p dir="RTL">
+۵. مفهوم 
+ppi 
+را در گوشی های موبایل محاسبه و هیستوگرام آن را رسم نمایید.
+همچنین نمودار سالانه متوسط این کمیت را بکشید.
+کدام گوشی بیشترین
+ppi
+را دارد؟
+</p>
+
+```{r warning=FALSE, message=FALSE}
+mobile_ppi = cbind(mobile, ppi = (mobile$px_row * mobile$px_col) / mobile$display_size)
+ggplot(data = mobile_ppi, aes(ppi)) +
+  # xlim(0, 700000) +
+  geom_histogram(fill = "dark blue", alpha = 0.5, color = "black")
+
+mobile_ppi %>% 
+  group_by(year) %>% 
+  summarise(average = mean(ppi, na.rm = TRUE)) -> ppi_stat
+
+ggplot(data = ppi_stat, mapping = aes(x = year, y = average)) + 
+  geom_bar(aes(fill = year), stat = "identity", alpha = 0.8) +
+  xlab("Year") + ylab("Average ppi")
+```
+
+
+***
+
+<p dir="RTL">
+۶. در گذشته به بعضی از مدل های گوشی نوکیا 
+**گوشکوب**
+گفته می شد. سعی کنید برای این مفهوم کمیتی مناسب تعریف کنید .
+ ده گوشکوب برتر را پیدا کرده و نمودار گوشکوبیت آن را رسم نمایید.
+</p>
+
+<p dir="RTL">در اینجا، از چند معیار برای تشخیص اصطلاحا گوشکوبها استفاده شده است. کم بودن قیمت، زیاد بودن وزن و چگالی گوشی و عامل دیگری که کمتر تاثیر داده شدهاست، زیاد بودن ضخامت گوشی نسبت به دیگر ابعاد. براین اساس گوشیها مرتب شده و ۱۰ گوشی با بیشترین معیار انتخاب شدهاند.
+همچنین برای این نوع گوشیها فرض شدهاست که امکانات بسیار کمی دارند، بنابراین گوشیهایی که دوربین یا رم قابل قبول و یا card slot دارند را از دادهها حذف میکنیم.
+</p>
+
+```{r}
+mobile %>% 
+  mutate(gooshkoobiness = 1000 * weight / (dim_thickness * dim_length * dim_breadth) / price + dim_thickness / (dim_length * dim_breadth)) %>% 
+  filter(dim_thickness > 10) %>%
+  filter(is.na(cam_px) | cam_px < 2) %>%
+  filter(is.na(card_slot) | card_slot == "No") %>%
+  arrange(desc(gooshkoobiness)) %>% 
+  slice(1:10) -> mobile_gsh
+mobile_gsh
+
+ggplot(data = mobile_gsh, mapping = aes(x = device, y = gooshkoobiness)) + 
+  geom_point(aes(color = company, size = price), alpha = 0.7) +
+  coord_flip()
+
+```
+
+***
+
+<p dir="RTL">
+۷. آیا تلفن همراهی وجود دارد که در آب غرق نشود؟
+اگر جواب بله هست تمام گوشی های که این خاصیت را دارند بیابید.
+با کشیدن یک نمودار به این سوال پاسخ دهید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+mobile %>% 
+  mutate(density = weight * 1000 / (dim_breadth * dim_length * dim_thickness)) -> mobile_dens
+floats = mobile_dens[which(mobile_dens$density <= 1), ]
+print(floats)
+ggplot(data = mobile_dens, aes(density)) +
+  geom_histogram(aes(fill = (density <= 1))) +
+  xlim(0, 4)
+ggplot(data = mobile_dens, aes(y = density, x = company)) +
+  geom_point(aes(color = (density <= 1)), alpha = 0.3, na.rm = TRUE) + 
+  coord_flip() + ylim(0, 5)
+```
+
+
+***
+
+<p dir="RTL">
+۸. نمودار پراکنش حجم ذخیره سازی باطری و وزن را رسم نمایید.
+میزان همبستگی بین این دو کمیت را محاسبه کنید.
+</p>
+
+```{r warning=FALSE}
+cor(x = mobile$battery_mah, y = mobile$weight, use = "complete.obs")
+
+ggplot(data = mobile, mapping = aes(x = battery_mah, y = weight)) +
+  geom_point(aes(color = year), alpha = 0.3) +
+  geom_smooth(method = "lm", na.rm = TRUE) + 
+  ylim(0, 1000)
+```
+
+
+***
+
+<p dir="RTL">
+۹. قیمت پرچمداران یک برند خاص مثلا سامسونگ را بیابید و نمودار قیمت زمان و نام مدل را رسم نمایید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+mobile %>% 
+  filter(company == "Samsung") %>% 
+  filter(!is.na(year)) %>% 
+  group_by(year) %>% 
+  slice(which.max(price)) %>% 
+  arrange(year) -> ensigns
+
+ggplot(data = ensigns, aes(x = year, y = price)) + 
+  geom_point(aes(color = device), size = 3) + geom_smooth(span = 0.3)
+```
+
+***
+
+<p dir="RTL">
+۱۰. سه نمودار جالب رسم کنید و توضیح دهید چرا از نظر شما جالب است؟
+</p>
+
+
+<p dir="RTL">
+در این نمودار سهم سیستمعاملهای مختلف برای انواع گوشیهای تولید شدهی کمپانیهای مختلف در طی سالهای گذشته  نشان داده شدهاست. همانطور که از نمودار پیداست، کمپانیهایی وجود دارند که فقط برای گوشیهای خودشان سیستمعاملی طراحی کرده اند، ولی با این حال از سالهای پیش تا کنون همین روند را ادامه دادهاند که نشان دهندهی این است که موفق بودهاند. همچنین انواع گوشیهای تولیدشده (اندازهی نقطهها) ی آنها نیز دلیلی بر این است. همانطور که مشاهده میشود سیستمعاملهایی نیز وجود دارند که کمپانیهای مختلف از آنها استفاده میکنند. 
+در کل با یک نگاه کلی به این نمودار به سرعت رشد و سهم سیستمعامل از تعداد و انواع کمپانیهای گوشیهای تولید شده پی برد. (نمودار رنگی که در آن کمپانیها مشخص شده اند پیوست شده است.)
+</p>
+
+
+```{r}
+mobile %>% 
+  filter(!is.na(os_type) & !is.na(year)) %>% 
+  group_by(os_type) %>% 
+  summarise(number = n()) %>% 
+  filter(number > 20) %>% 
+  select(os_type) -> big_os
+big_os = big_os$os_type
+
+mobile %>% 
+  filter(!is.na(os_type) & !is.na(year)) %>% 
+  filter(os_type %in% big_os) %>% 
+  group_by(year, os_type, company) %>% 
+  summarise(number = n()) -> os_stat #%>% 
+  # arrange(number) 
+
+ggplot(data = os_stat, mapping = aes(x = os_type, y = year)) + 
+  # geom_jitter(aes(size = number, color = company), width = 0.3)
+  geom_jitter(aes(size = number), width = 0.3)
+## --> full size plot is attached (RPlot1_Q10)
+```
+
+***
+<p dir="RTL">
+
+در این نمودار با توجه به sel_px (کیفیت دوربین سلفی) مشخص شدهاست که چه گوشیهایی از لحاظ ابعاد (و وزن) از نظر کمپانیها برای سلفی گرفتن (و یا نگه داشتن گوشی در دست) راحتتر و مناسبترند. با یک نگاه کلی میتوان دریافت که گوشیهایی که روی دوربین آنها هزینهی زیادی شدهاست، اکثراً در رنج خاصی از ابعاد طول و عرض و همچنین وزن قرار دارند.
+</p>
+
+
+
+```{r warning=FALSE}
+mobile %>% 
+  filter(!is.na(dim_breadth & !is.na(dim_length))) %>%
+  filter(sel_px < 15) -> sel_stat
+
+ggplot(data = sel_stat, mapping = aes(x = dim_length, dim_breadth)) +
+  geom_point(aes(color = sel_px, size = weight), alpha = 0.4) +
+  ylim(25, 250) + xlim(50, 350) +
+  scale_color_gradient(low = "blue", high = "red")
+```
+
+
+***
+<p dir="RTL"># 
+این نمودار برای پیدا کردن کمپانیهایی رسم شدهاست که ابتدا یک آپشن خاص را به گوشیهایشان اضافه کرده و سپس بقیه کمپانیها نیز به دنبال اضافه کردن آن آپشن میروند. در واقع کمپانیهایی که به اصطلاح یک ترند خاص را شروع کرده اند. اما با توجه به این که دادهها سالیانه جمعآوری شدهاند بررسی خیلی دقیق امکانپذیر نیست. 
+در اینجا این کم کردن ضخامت موبایل به عنوان ترند در نظر گرفته شدهاست. که همانطور که در نمودار نشان داده شده است، ابتدا چند کمپانی شروع به کم کردن ضخامت گوشیهای خود کردهاند.
+</p>
+
+
+```{r}
+mobile %>% 
+  filter(!is.na(company) & !is.na(year)) %>% 
+  group_by(company) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number)) %>% 
+  filter(number > 70) -> big_companies
+big_companies = big_companies$company
+
+mobile %>%
+  filter(!is.na(company) & !is.na(year) & !is.na(dim_thickness)) %>% 
+  filter(company %in% big_companies) %>%
+  group_by(year, company) %>% 
+  summarise(thickness = min(dim_thickness, na.rm = TRUE)) -> dens_stat
+
+ggplot(data = dens_stat, mapping = aes(x = year, y = thickness, color = company)) +
+  geom_point() + geom_line()
+## --> full size plot is attached (RPlot3_Q10)
+
+```
+
+
+
+
+
+
+
+
+
+
