@@ -1,0 +1,416 @@
+---
+title: "Association rules"
+subtitle: "Movie recommender systems"
+author: "Kimia Hamidieh (95109434)"
+date: "`r Sys.time()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/rs_cover.jpg"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با استفاده از داده نظرهای فیلم به سوالات زیر پاسخ دهید.
+</p>
+
+***
+
+```{r include=FALSE, message=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(highcharter)
+library(ggplot2)
+library(ggthemes)
+library(stringr)
+library(tidytext)
+library(wordcloud2)
+library(knitr)
+
+theme_set(theme_minimal())
+
+```
+
+
+<p dir="RTL">
+۱. آماره های زیر را بیابید.
+</p>
+
+<p dir="RTL">
+ابتدا برای خواندن داده، با توجه به اینکه اسم برخی فیلمها شامل دونقطه است و نمیتوان دادههای مربوط به آن را درست خواند، لازم است به شیوهی زیر عمل کنیم.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+movies = read_lines("data/movies.dat") %>% 
+  str_replace_all("::", "\036") %>%
+  paste(collapse = "\n") %>%
+  read_delim(delim = "\036", escape_double = F, trim_ws = T,
+             col_names = c('MovieID', 'Title', 'Genres'))
+
+ratings = read_delim("data/ratings.dat", "::",
+                    col_names = c("UserID", NA, "MovieID", NA,"Rating", NA, "Timestamp"))
+ratings %>% select(1, 3, 5, 7) -> ratings
+
+tags = read_delim("data/tags.dat", "::",
+                 col_names = c("UserID", NA, "MovieID", NA,"Tag",NA, "Timestamp"))
+tags %>% select(1, 3, 5, 7) -> tags
+```
+
+
+<p dir="RTL">
+الف. محبوب ترین فیلم کدام است؟
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ratings %>% 
+  group_by(MovieID) %>% 
+  summarise(mean_rating = mean(Rating)) %>% 
+  # arrange(desc(mean_rating)) %>%
+  top_n(5, mean_rating) %>% 
+  left_join(movies) %>% 
+  select(Title)
+```
+
+<p dir="RTL">
+ب. بیشترین نظرات درباره چه فیلمی داده شده است؟
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+ratings %>% 
+  group_by(MovieID) %>% 
+  summarise(rating_count = n()) %>% 
+  # arrange(desc(rating_count)) %>%
+  slice(which.max(rating_count)) %>%
+  left_join(movies) %>% 
+  select(Title, rating_count)
+```
+
+<p dir="RTL">
+پ. منفورترین فیلم کدام است؟
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ratings %>% 
+  group_by(MovieID) %>% 
+  summarise(mean_rating = mean(Rating)) %>% 
+  arrange(mean_rating) %>%
+  # slice(which.min(mean_rating)) %>% 
+  top_n(3, -mean_rating) %>% 
+  left_join(movies) %>% 
+  select(Title)
+```
+
+<p dir="RTL">
+ت. تعداد فیلم های ساخته شده در هر سال
+</p>
+
+```{r message=FALSE, warning=FALSE}
+movies %>% 
+  mutate(year = str_extract(Title, "\\([[:digit:]]{4}\\)")) %>%
+  mutate(year = str_sub(year, 2, 5)) %>% 
+  group_by(year) -> movie_year
+
+movie_year %>% 
+  filter(year != "2008") %>% 
+  summarise(movie_count = n()) %>% 
+  hchart("line", hcaes(x = year, y = movie_count))
+```
+
+<p dir="RTL">
+ث. در هر سالی مردم به چه ژانری علاقه مند بوده اند.
+</p>
+
+```{r message=FALSE}
+ratings %>% 
+  group_by(MovieID) %>% 
+  summarise(movie_rating = mean(Rating)) %>% 
+  left_join(movie_year) %>% 
+  separate_rows(Genres, sep = "\\|") %>% 
+  group_by(year, Genres) %>% 
+  summarise(genre_rating = mean(movie_rating)) %>%
+  filter(genre_rating == max(genre_rating)) %>% 
+  kable()
+  
+```
+
+
+
+
+
+***
+
+<p dir="RTL">
+۲. ژانر فیلم ها را استخراج نمایید.  سپس آماره های زیر را استخراج نمایید.
+</p>
+
+
+<p dir="RTL">
+الف. نمودار ستونی تعداد فیلم های هر ژانر
+</p>
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+movies %>% 
+  separate_rows(Genres, sep = "\\|") %>% 
+  filter(Genres != "(no genres listed)") -> movie_genres
+
+movie_genres %>% 
+  group_by(Genres) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number)) %>% 
+  hchart("bar", hcaes(x = Genres, y = number)) %>% 
+  hc_title(text = "Number of Movies per Genre")
+```
+
+
+<p dir="RTL">
+ب. نمودار همبستگی ژانرها
+</p>
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+genre_cols = movie_genres$Title
+movie_genres %>% 
+  mutate(hasGenre = 1) %>% 
+  spread(Genres, hasGenre, fill = 0) %>% 
+  select(-c(MovieID, Title)) %>% 
+  as.matrix() -> genres_spread
+cor_mat = cor(genres_spread)
+corrplot::corrplot(cor_mat, diag = FALSE, tl.col = "black")
+```
+
+<p dir="RTL">
+پ. متوسط امتیاز به هر ژانر
+</p>
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+# average score of each genre
+movie_genres %>% 
+  full_join(ratings) %>% 
+  group_by(Genres) %>% 
+  summarise(average_score = mean(Rating, na.rm = TRUE)) %>% 
+  hchart("bar", hcaes(x = Genres, y = average_score)) %>% 
+  hc_title(text = "Mean Score per Genre")
+```
+
+<p dir="RTL">
+ت. دوران طلایی فیلم سازی 
+</p>
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+# golden era
+movie_year %>% 
+  inner_join(ratings) %>% 
+  group_by(year) %>% 
+  summarize(mean_rating = mean(Rating, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(era = (as.numeric(year) %/% 5) * 5) %>% 
+  group_by(era) %>% # era is a 5-year period of time
+  summarise(mean_rating_5yrs = mean(mean_rating)) %>% 
+  slice(which.max(mean_rating_5yrs))
+  
+```
+<p dir=“RTL”>
+با توجه به اینکه دوران را بازههای زمانی ۵ ساله در نظر گرفتهایم، در اینجا بازهی زمانی ۱۹۴۰ تا ۱۹۴۴ به عنوان دوران طلایی شناخته میشود.
+</p>
+
+
+
+***
+
+<p dir="RTL">
+۳. نمودار ابر لغات را بر حسب کلمات عنوان فیلم ها رسم نمایید.
+</p>
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+movies %>% 
+  select(Title) %>% 
+  unnest_tokens(word, Title) %>% 
+  filter(!str_detect(word, "[0-9]+")) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  group_by(word) %>% 
+  summarise(freq = n()) -> title_words
+
+wordcloud2(title_words, size = 1.1)
+```
+
+
+
+***
+
+<p dir="RTL">
+۴. با استفاده از قوانین همبستگی یک توصیه گر برای فیلم ها بسازید. شبیه ترین فیلم ها به لیست زیر را پیدا کنید.
+</p>
+
+* Castle in the Sky (1986)
+* Cast Away (2000)
+* No Country for Old Men (2007)
+* Memento (2000)
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+library(arules)
+
+user_movies <- ratings %>% 
+  # sample_frac(0.2) %>%
+  filter(Rating >= 3) %>% 
+  inner_join(movies) %>%
+  group_by(UserID) %>% 
+  summarise(titles = list(c(Title)))
+
+transactions <- as(user_movies$titles, "transactions")
+
+# rules1 <- apriori(transactions, parameter = list(support = 0.001, confidence = 0.15, minlen = 2),
+#                        appearance = list(default = "rhs", lhs = "Castle in the Sky (Tenkû no shiro Rapyuta) (1986)"),
+#                        control = list(verbose = F))
+# inspect(rules1)
+# 
+# rules2 <- apriori(transactions, parameter = list(support = 0.001, confidence = 0.15, minlen = 2),
+#                   appearance = list(default = "rhs", lhs = "Cast Away (2000)"),
+#                   control = list(verbose = F))
+# inspect(rules2)
+# 
+# rules3 <- apriori(transactions, parameter = list(support = 0.001, confidence = 0.15, minlen = 2),
+#                   appearance = list(default = "rhs", lhs = "No Country for Old Men (2007)"),
+#                   control = list(verbose = F))
+# inspect(rules3)
+# 
+# rules4 <- apriori(transactions, parameter = list(support = 0.001, confidence = 0.15, minlen = 2),
+#                   appearance = list(default = "rhs", lhs = "Memento (2000)"),
+#                   control = list(verbose = F))
+# inspect(rules4)
+
+rules <- apriori(transactions, parameter = list(support = 0.001, confidence = 0.15, minlen = 2),
+                       appearance = list(default = "rhs", 
+                                         lhs = c("Castle in the Sky (Tenkû no shiro Rapyuta) (1986)",
+                                                 "Cast Away (2000)",
+                                                 "No Country for Old Men (2007)",
+                                                 "Memento (2000)")),
+                       control = list(verbose = F))
+inspect(rules)
+```
+
+
+***
+
+<p dir="RTL">
+۵. تمرین سخت: در گیت هاب برای خود اکانت درست کنید. همه تمرین های خود را آنجا بارگذاری کنید! و لینک آن را ارسال نمایید.
+</p>
+
+[github](https://github.com/kimiah/Data-Analysis-HWs)
+
+
+***
+
+<p dir="RTL">
+۶. پنج انتقاد از درس و نحوه تدریس را بیان کنید.
+</p>
+
+<p dir=“RTL">
+۱. وقتی که برای مباحث و تمرینهای مختلف درنظر گرفته شده بود، یکسان بود در حالی که برخی مباحث احتیاج به خواندن refrenceهای مختلف داشتند و برخی دیگر حضور سرکلاس کافی بود. 
+</p>
+
+<p dir=“RTL">
+۲. با توجه به ماهیت برخی مباحث مانند PCA، مدلهای خطی و … اگر تمرکز آن جلسات بیشتر بر مفاهیم و فرمولبندی بود، احتمالاً فراگیری و بعد کد زدن در این مباحث راحتتر میشد.
+</p>
+
+<p dir=“RTL">
+۳. طبق توضیحات دادهشده در قسمت قبل، چون تمرکز اصلی درس بر روی این مفاهیم و فرمولبندیها نبوده، بهتر بود آزمون پایانی درس نیز متمرکز بر این مباحث نمیبود. چرا که دانشجویی که مثلاً درس جبر خطی را پاس نکرده بود، نمیتوانست به سادگی به بسیاری از سوالها پاسخ دهد.
+</p>
+
+<p dir=“RTL">
+۴. در بسیاری از تمرینها، سوالهایی وجود داشتند که به نوعی تکرار سوالهای دیگر بودند و به نظر من بار آموزشی زیادی نداشتند و تنها وقتگیر بودند.
+</p>
+
+<p dir=“RTL">
+۵. برخی نمودارهای موجود در اسلایدهای طرح درس و تفسیر آنها، سرکلاس تقریباً توضیح داده نمیشدند در حالی که نسبتاً مهم بودند و حتی در تمرینها از آنها سوال داده شده بود. 
+</p>
+
+
+***
+
+<p dir="RTL">
+۷. پنج پیشنهاد برای بهتر شدن درس بیان کنید.
+</p>
+
+<p dir=“RTL">
+۱. در مباحث آزمون فرض، ممکن بود دقیق شدن در چگونگی کارکرد هر آزمون و زدن کد آن آزمون بدون استفاده از کتابخانهها مفیدتر باشد تا تنها یادگیری کاربرد هر آزمون و صرفاً صدا زدن تابع مربوط به آن. 
+</p>
+
+<p dir=“RTL">
+۲. بهتر بود در مبحث تحلیل رشتهها، در کلاس نیز با n-gramها و کاربردهایشان آشنا میشدیم و بعد در تمرینها برای ساخت مدل از آنها استفاده میکردیم.
+</p>
+
+<p dir=“RTL">
+۳. پروژه و شیوهی نمرهدهی آن به نظر من گنگ آمد. بهتر میبود برای هر فاز پروژه مشخص میشد که دقیقاً چه چیزهایی قابل انتظار است و بارمبندی به چه شیوهای است. 
+</p>
+
+<p dir=“RTL">
+۴. با توجه به گنگ بودن تعداد بسیار زیادی از سوالات تمرینها، بهتر میبود فضایی برای بحث در مورد تمرینها مانند piazza و یا CW بود تا تعامل بین تیایها و دانشجوها بهتر صورت گیرد و این سوالات زودتر رفع شوند.
+</p>
+
+<p dir=“RTL">
+۵. در صورتی که نمرات تمرینها زودتر قرار داده میشد احتمالا یادگیری بیشتر میبود. قرار دادن پاسخ هر تمرین پس از ددلاین آن میتوانست بسیار مفید باشد.
+</p>
+
+
+***
+
+<p dir="RTL">
+۸. سه موضوع آماری جدید برای جایگزینی در سرفصل ها پیشنهاد دهید.
+</p>
+
+MapReduce
+
+Time Series
+
+Advanced methods for missing data
+
+Using bagging and random forests to reduce training variance
+
+Using generalized additive models (GAMs) to learn non-monotone relationships
+
+***
+
+<p dir="RTL"> 
+۹. سه داده جالب برای کار در کلاس پیشنهاد دهید.
+</p>
+
+<p dir=“RTL”>
+توتریالها و یا در واقع شروع کار با داده در لینکها آمده است.
+</p>
+
+[Human Activity Recognition Dataset](https://rstudio-pubs-static.s3.amazonaws.com/291850_859937539fb14c37b0a311db344a6016.html)
+
+[the Jester, Online Joke Recommender System](http://www.ieor.berkeley.edu/~goldberg/jester-data/)
+
+[Walmart Sales Data](https://www.kaggle.com/c/walmart-recruiting-store-sales-forecasting/data)
+
+***
+
+<p dir="RTL"> 
+۱۰. چهار نکته مهمی که در کلاس یاد گرفتید را بیان کنید.
+</p>
+
+Visualisation
+<p dir=“RTL">
+طرح سوال راجب دادهی موجود
+</p>
+
+<p dir=“RTL">
+پیدا کردن شهود اولیه راجع به داده
+</p>
+
+<p dir=“RTL“>
+همه انواع آزمونفرضها و کاربرد دقیق آنها
+</p>
+
+<p dir=“RTL”>
+خودآموزی :))
+</p>
+
+
+
+

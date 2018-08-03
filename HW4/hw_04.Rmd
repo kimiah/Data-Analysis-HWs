@@ -1,0 +1,540 @@
+---
+title: "Fourth Week: Hypothesis Testing"
+subtitle: "TIMSS Analysis"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/math.jpg"  align = 'center'>
+</div>
+
+<h1 dir="RTL"> 
+تمرین سری چهارم: چقدر ریاضی بلدیم و چرا؟
+</h1>
+
+<p dir="RTL"> لطفا مقاله زیر را مطالعه بفرمایید. </p>
+<p dir="RTL">
+[چرایی رتبه ضعیف ایران در آزمون تیمز](https://goo.gl/gX8DZc)
+</p>
+
+> <p dir="RTL"> 
+با استفاده از داده های ارزیابی تیمز ۲۰۱۵ ادعاهای زیر را مورد ارزیابی قراردهید.
+برای هر سوال علاوه بر استدلال آماری که در غالب آزمون فرض تعریف می شود از تصویرسازی مناسب باهر دو ابزار
+ggplot2
+و
+highcharter
+استفاده نمایید.
+به دلخواه به هفت گزاره از موارد زیر پاسخ دهید.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+library("readr")
+library("dplyr")
+library("tidyr")
+library("highcharter")
+library("ggplot2")
+
+bcg = read_rds("../data/bcg.rds") # school
+bsg = read_rds("../data/bsg.rds") # student background
+btm = read_rds("../data/btm.rds") # teacher background - math
+bts = read_rds("../data/bts.rds") # teacher background - science
+bsa = read_rds("../data/bsa.rds") # results
+bst = read_rds("../data/bst.rds") # student teacher linkage
+```
+
+***
+<p dir="RTL">
+ابتدا برای بررسی عملکرد دانشآموزان، با استفاده از bsa و میانگین ستونهای مربوط به ریاضی و علوم و سپس میانگین این دو، دیتافریمی ایجاد میکنیم.
+</p>
+
+```{r message=FALSE}
+std_perf = bsa %>% select(idcntry:idstud, bsmmat01:bssrea05)
+std_perf %>% 
+  rowwise() %>% 
+  mutate(math = mean(c(bsmmat01:bsmmat05))) %>% 
+  mutate(science = mean(c(bsssci01:bsssci05))) %>% 
+  mutate(total = mean(c(math, science))) -> std_perf
+```
+
+
+***
+
+<p dir="RTL">
+۱. میران رضایت معلمان در پیشرفت تحصیلی دانش آموزان موثر است.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+# math ---------------
+satxperf_math = full_join(bst %>% select(idcntry:idtealin),
+                     std_perf %>% select(idcntry:idstud, math))
+satxperf_math = full_join(satxperf_math, btm %>% select(idcntry:idlink, btbg10a:btbg10g))
+
+satxperf_math %>% 
+  drop_na() %>%
+  mutate(sat = 35 - (btbg10a + btbg10b + btbg10c + btbg10d + btbg10e + btbg10f + btbg10g)) %>% 
+  select(score = math, sat) -> satxperf_math
+
+cor.test(satxperf_math$score, satxperf_math$sat)
+
+# science ---------------
+satxperf_sci = full_join(bst %>% select(idcntry:idtealin),
+                          std_perf %>% select(idcntry:idstud, science))
+satxperf_sci = full_join(satxperf_sci, bts %>% select(idcntry:idlink, btbg10a:btbg10g))
+
+satxperf_sci %>% 
+  drop_na() %>%
+  mutate(sat = 35 - (btbg10a + btbg10b + btbg10c + btbg10d + btbg10e + btbg10f + btbg10g)) %>% 
+  select(score = science, sat) -> satxperf_sci
+
+cor.test(satxperf_sci$score, satxperf_sci$sat)
+
+# both ---------------
+satxperf = rbind(satxperf_math, satxperf_sci)
+
+satxperf %>% 
+  ungroup() %>%
+  group_by(sat) %>% 
+  summarise(score = mean(score)) -> satxperf_plot
+
+ggplot(data = satxperf_plot, aes(x = sat, y = score)) +
+  geom_point() +
+  geom_smooth() +
+  theme_bw()
+
+hchart(satxperf_plot, "area", hcaes(x = sat, y = score))
+
+cor.test(satxperf$score, satxperf$sat)
+```
+
+
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+همچنین این فرضیه برای ریاضی و علوم به طور جداگانه و در نهایت در کل بررسی شدهاست.
+</p>
+
+***
+
+<p dir="RTL">
+۲. والدینی که تحصیلات بیشتری دارند دارای فرزندان موفق تری می باشند.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+parentsxperf = full_join(bsg %>% select(idcntry:idstud, bsbg07a, bsbg07b),
+                         std_perf %>% select(idcntry:idstud, total))
+parentsxperf %>% 
+  select(mother_edu = bsbg07a, father_edu = bsbg07b, score = total) %>% 
+  mutate(family_edu = (mother_edu + father_edu) / 2) %>% 
+  filter(!is.na(mother_edu) & !is.na(father_edu) & !is.na(score)) -> parentsxperf
+
+parentsxperf %>% 
+  group_by(mother_edu = mother_edu %>% as.numeric(), father_edu = father_edu %>% as.numeric()) %>% 
+  summarise(score = mean(score)) -> parentsxperf_plot
+parentsxperf_plot %>% 
+  ggplot(aes(x = mother_edu, y = father_edu)) +
+  geom_point(aes(size = score), alpha = 0.8)
+
+parentsxperf %>% 
+  group_by(family_edu = family_edu %>% as.numeric()) %>% 
+  summarise(score = mean(score)) -> parentsxperf_plot
+parentsxperf_plot %>% 
+  ggplot(aes(x = family_edu, y = score)) +
+  geom_point() + geom_smooth()
+
+hchart(parentsxperf_plot, "line", hcaes(x = family_edu, y = score))
+  
+cor.test(parentsxperf$score, parentsxperf$mother_edu)
+# mother_fit = aov(score ~ mother_edu, data = parentsxperf)
+# summary.aov(mother_fit)
+
+cor.test(parentsxperf$score, parentsxperf$father_edu)
+# father_fit = aov(score ~ father_edu, data = parentsxperf)
+# summary.aov(father_fit)
+
+cor.test(parentsxperf$score, parentsxperf$family_edu)
+family_fit = aov(score ~ family_edu, data = parentsxperf)
+summary.aov(family_fit)
+```
+
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+همچنین این فرضیه برای مادر و پدر به طور جداگانه و در نهایت در کل بررسی شدهاست.
+</p>
+
+***
+
+<p dir="RTL">
+۳. امکانات رفاهی در خانه موجب پیشرفت تحصیلی می گردد.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+facxperf = full_join(bsg %>% select(idcntry:idstud, bsbg06a:bsbg06k),
+                           std_perf %>% select(idcntry:idstud, total))
+
+facxperf %>% 
+  select(idcntry:idstud, score = total, bsbg06a:bsbg06k) %>% 
+  gather(key = "bsbg", value = "val", colnames(.)[7:ncol(.)]) -> facxperf
+
+facxperf %>% 
+  drop_na() %>% 
+  group_by(idcntry, idbook, idschool, idclass, idstud, score) %>% 
+  summarise(fac = 2 - mean(val)) -> facxperf
+
+facxperf %>% 
+  ungroup() %>% 
+  select(score, fac) %>% 
+  group_by(fac) %>% 
+  summarise(score = mean(score)) -> facxperf_plot
+
+ggplot(facxperf_plot, aes(x = fac, y = score)) +
+  geom_point(aes(color = fac)) + 
+  geom_smooth() + theme_bw()
+
+hchart(facxperf_plot, "line", hcaes(x = fac, y = score))
+
+cor.test(facxperf$fac, facxperf$score)
+```
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+</p>
+
+***
+
+<p dir="RTL">
+۴. محیط آرام مدرسه نقش مهمی در پیشرفت تحصیلی دارد.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+schenvxperf = full_join(bsg %>% select(idcntry:idstud, bsbg16a:bsbg16i),
+                        std_perf %>% select(idcntry:idstud, total))
+schenvxperf %>% 
+  drop_na() %>% 
+  select(idcntry:idstud, score = total, bsbg16a:bsbg16i) %>% 
+  mutate(safety = bsbg16a + bsbg16b + bsbg16c + bsbg16d + bsbg16e + bsbg16f + bsbg16h + bsbg16i) -> schenvxperf
+
+ggplot(schenvxperf, aes(x = safety, y = score)) +
+  geom_boxplot(aes(fill = safety %>% as.character())) + guides(fill = FALSE)
+schenvxperf %>% 
+  group_by(safety) %>% 
+  summarise(score = mean(score)) -> schenvxperf_plot
+ggplot(data = schenvxperf_plot, aes(x = safety, y = score)) +
+  geom_point() +
+  geom_smooth() +
+  theme_bw()
+hchart(schenvxperf_plot, "line",hcaes(x = safety, y = score))
+  
+cor.test(schenvxperf$score, schenvxperf$safety)
+```
+
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+</p>
+
+
+
+***
+
+<p dir="RTL">
+۵. معلمان با تحصیلات  بالاتر یا تجربه بیشتر دانش آموزان موفق تری تربیت می کنند.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+# math ---------------
+teacherxperf_math = full_join(bst %>% select(idcntry:idtealin),
+                          std_perf %>% select(idcntry:idstud, math))
+teacherxperf_math = full_join(teacherxperf_math, btm %>% select(idcntry:idlink, btbg01, btbg04))
+
+teacherxperf_math %>% 
+  drop_na() %>%
+  mutate(exp = btbg01 / max(btbg01) / 2, edu = btbg04 / max(btbg04) / 2) %>% 
+  mutate(exp_edu = exp + edu) %>% 
+  select(score = math, exp_edu) -> teacherxperf_math
+
+# science ---------------
+teacherxperf_sci = full_join(bst %>% select(idcntry:idtealin),
+                              std_perf %>% select(idcntry:idstud, science))
+teacherxperf_sci = full_join(teacherxperf_sci, bts %>% select(idcntry:idlink, btbg01, btbg04))
+
+teacherxperf_sci %>% 
+  drop_na() %>%
+  mutate(exp = btbg01 / max(btbg01) / 2, edu = btbg04 / max(btbg04) / 2) %>% 
+  mutate(exp_edu = exp + edu) %>% 
+  select(score = science, exp_edu) -> teacherxperf_sci
+
+# both ---------------
+teacherxperf = rbind(teacherxperf_math, teacherxperf_sci)
+teacherxperf %>% 
+  ungroup() %>%
+  group_by(exp_edu) %>% 
+  filter(n() > 1000) %>%
+  summarise(score = mean(score), n = n()) -> teacherxperf_plot
+
+ggplot(data = teacherxperf_plot, aes(x = exp_edu, y = score)) +
+  geom_point(aes(alpha = n)) +
+  geom_smooth() +
+  xlim(0.4, 0.7) +
+  theme_bw()
+
+hchart(teacherxperf_plot, "line", hcaes(x = exp_edu, y = score))
+
+cor.test(teacherxperf$score, teacherxperf$exp_edu)
+```
+
+<p dir="RTL">
+در اینجا برای تشخیص تحصیلات بالاتر و تجربهی بیشتر معلمان، معیاری از ایندو تعریف شده به صورتی که جمع مقدارهای نرمالایز شدهی ایندو است. (میزان تحصیلات/تجربه، هر یک بهصورت عددی بین ۰ و ۰.۵ درآمده است که معیاری از تحصیلات/تجربه با توجه به بیشترین مقدار ممکن است.) 
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن تحصیلات/تجربه و موفقیت روی هم رد میشود و فرض صورت سوال درست بوده است.
+</p>
+
+***
+
+<p dir="RTL"> 
+۶. پسران در کاربرد هندسه قوی تر هستند.
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+genxgeo = full_join(std_perf %>% select(idcntry:idstud, bsmgeo01:bsmgeo05), 
+                     bsg %>% select(idcntry:idstud, itsex, bsbg01))
+
+genxgeo %>% 
+  filter(itsex == bsbg01) %>%
+  rowwise() %>% 
+  mutate(geo = mean(c(bsmgeo01:bsmgeo05))) %>%
+  select(itsex, geo) %>% 
+  mutate(itsex = ifelse(itsex == 1, "Female", "Male")) %>% 
+  ungroup() -> genxgeo
+
+ggplot(genxgeo, aes(x = itsex, y = geo, fill = itsex)) +
+  geom_boxplot(alpha = 0.4)
+
+ggplot(genxgeo, aes(x = geo,fill = itsex)) +
+  geom_density(alpha = 0.4)
+
+genxgeo %>% group_by(itsex) %>% summarize(geo = mean(geo)) -> genxgeo_plot
+hchart(genxgeo_plot, "bar", hcaes(x = itsex, y = geo))
+
+t.test(geo ~ itsex, data = genxgeo, alt = "greater")
+```
+
+<p dir="RTL"> 
+با استفاده از t.test در مقایسهی میانگین این دو گروه، فرض ما مبنی براینکه هندسهی پسرها قویتر بوده رد شدهاست.
+</p>
+
+
+***
+
+<p dir="RTL"> 
+۷. تغذیه دانش آموزان نقش اساسی در یادگیری آنها دارد. 
+</p>
+
+```{r message=FALSE, warning=FALSE, eval=TRUE}
+breakfastxperf = full_join(bsg %>% select(idcntry:idstud, bsbg12),
+                           std_perf %>% select(idcntry:idstud, total))
+breakfastxperf %>% 
+  select(breakfast = bsbg12, score = total) %>% 
+  filter(!is.na(breakfast) & !is.na(score)) -> breakfastxperf
+
+breakfastxperf %>% 
+  ggplot(aes(x = score, fill = factor(breakfast))) +
+  geom_density(alpha = 0.4)
+
+breakfastxperf %>% 
+  ggplot(aes(x = factor(breakfast), y = score)) +
+  geom_boxplot(aes(fill = factor(breakfast)), alpha = 0.4)
+
+breakfastxperf %>% 
+  group_by(breakfast) %>% 
+  summarize(score = mean(score)) -> breakfastxperf_plot
+
+hchart(breakfastxperf_plot, "bar", hcaes(x = breakfast, y = score))
+
+cor.test(breakfastxperf$score, breakfastxperf$breakfast)
+```
+
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+</p>
+
+***
+
+<p dir="RTL"> 
+۸. مدارس با امکانات بیشتر دارای عملکرد بهتری می باشند.
+</p>
+
+***
+
+<p dir="RTL"> 
+۹. علت افت تحصیلی عدم مشارکت در کلاس است.
+</p>
+
+***
+
+<p dir="RTL"> 
+۱۰. دانش آموزان ایرانی در استدلال قوی تر از کاربرد هستند.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+bsa %>% 
+  filter(idcntry == 364) -> iran_bsa
+  
+iran_bsa %>% 
+  rowwise() %>% 
+  mutate(app = mean(c(bsmapp01:bsmapp05)), 
+         rsn = mean(c(bsmrea01:bsmrea05)), course = "math") -> appxrsn_math
+iran_bsa %>% 
+  rowwise() %>% 
+  mutate(app = mean(c(bssapp01:bssapp05)), 
+         rsn = mean(c(bssrea01:bssrea05)), course = "science") -> appxrsn_sci
+
+rbind(appxrsn_sci, appxrsn_math) -> appxrsn
+
+appxrsn %>% 
+  select(idcntry:idstud, app, rsn) %>% 
+  gather(key = "app_rsn", value = "val", colnames(.)[6:ncol(.)]) -> appxrsn
+
+ggplot(appxrsn, aes(val)) +
+  geom_density(aes(fill = app_rsn), alpha = 0.3)
+
+#appxrsn_plot %>% group_by(app_rsn) %>% summarise(val = mean(val)) -> appxrsn_plot
+#hchart(appxrsn_plot, "bar", hcaes(y = val, x = app_rsn))
+
+t.test(val ~ factor(app_rsn), paired = TRUE, appxrsn)
+
+```
+
+<p dir="RTL">
+با توجه به مقدار بسیار کم p-value میتوان گفت فرض تاثیر نداشتن این دو روی یکدیگر رد میشود و فرض صورت سوال درست بوده است.
+</p>
+
+***
+
+<p dir="RTL">
+سه گزاره جالب کشف کنید و ادعای خود را ثابت نمایید.
+</p>
+
+***
+<p dir="RTL">
+دانشآموزان مهاجر بلندپروازترند.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+bsg %>% select(bsbg08, bsbg09a, bsbg09b, bsbg10a) -> emg
+
+emg %>% 
+  drop_na() %>% 
+  filter(bsbg09a != 3 & bsbg09b != 3) %>% 
+  mutate(std = ifelse(bsbg10a == 1, "Native", "Foreigner")) %>% 
+  mutate(edu = bsbg08, mother = bsbg09a, father = bsbg09b) %>% 
+  mutate(m = ifelse(mother == 1, "Native", "Foreigner")) %>% 
+  mutate(f = ifelse(father == 1, "Native", "Foreigner")) %>% 
+  select(edu, mother, father, std, m, f) -> emg
+
+ggplot(emg, aes(y = edu, x = factor(std))) +
+  geom_boxplot(aes(fill = factor(std)), alpha = 0.4)
+emg %>% group_by(std) %>% summarize(mean_edu = mean(edu)) -> emg_plot
+hchart(emg_plot, "bar", hcaes(y = mean_edu, x = std))
+
+t.test(edu ~ factor(std), emg, alt = "greater")
+
+emg %>% group_by(mother, father, std) %>% 
+  summarise(mean_edu = mean(edu)) -> emg_plot
+
+ggplot(emg_plot, aes(x = factor(mother + father), y = mean_edu)) +
+  geom_point(aes(color = factor(std), size = mean_edu))
+
+t.test(edu ~ factor(m), emg, alt = "greater")
+t.test(edu ~ factor(f), emg, alt = "greater")
+
+test = aov(edu ~ factor(mother + father), emg)
+summary.aov(test)
+
+```
+
+<p dir="RTL">
+ با توجه به مدرکی که دانشآموزان میخواهند در آینده بگیرند، میزان بلندپرواز بودن آنها مشخص شدهاست اول نسل اول مهاجران بررسی شده است که با توجه به آزمون بلندپروازترند. سپس برای نسل دوم آنها با توجه به اینکه پدر مهاجر بوده و یا مادر دوباره این گزاره بررسی شدهاست که در هر حالت نتیجهی بهدست آمده این است که این دانشآموزان از لحاظ تحصیلات اهداف بزرگتری دارند.
+</p>
+
+
+***
+
+<p dir="RTL">
+دانشآموزان معلمان خانم نتیجهی بهتری میگیرند.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+teacherxperf_math = full_join(bst %>% select(idcntry:idtealin), std_perf %>% select(idcntry:idstud, math))
+teacherxperf_math = full_join(teacherxperf_math, btm %>% select(idcntry:idlink, btbg02))
+teacherxperf_math %>% 
+  drop_na() %>%
+  mutate(tsex = ifelse(btbg02 == 1, "Female", "Male")) %>% 
+  mutate(score = math, course = "math") %>% 
+  select(score, tsex, course) -> teacherxperf_math
+
+
+teacherxperf_sci = full_join(bst %>% select(idcntry:idtealin), std_perf %>% select(idcntry:idstud, science))
+teacherxperf_sci = full_join(teacherxperf_sci, bts %>% select(idcntry:idlink, btbg02))
+teacherxperf_sci %>% 
+  drop_na() %>%
+  mutate(tsex = ifelse(btbg02 == 1, "Female", "Male")) %>% 
+  mutate(score = science, course = "sci") %>% 
+  select(score, tsex, course) -> teacherxperf_sci
+
+teacherxperf = rbind(teacherxperf_math, teacherxperf_sci)
+
+teacherxperf %>% 
+  group_by(tsex, course) %>% 
+  summarize(score = mean(score)) -> teacherxperf_plot
+
+ggplot(teacherxperf_plot, aes(x = factor(tsex), y = factor(course))) +
+  geom_point(aes(color = score, size = score))
+
+hchart(teacherxperf_plot, "bar", hcaes(x = tsex, y = score))
+
+t.test(score ~ factor(tsex), teacherxperf, alt = "greater")
+
+```
+
+***
+<p dir="RTL">
+تعداد تمرین بیشتر در هفته باعث افت دانشآموزان میشود.
+</p>
+
+```{r warning=FALSE, message=FALSE}
+full_join(bsg %>% select(idcntry:idstud, bsbm25aa, bsbs25ab), # math, science
+          std_perf %>% select(idcntry:idstud, math, science)) -> hwxperf
+
+hwxperf %>% 
+  filter(!is.na(bsbm25aa)) %>% 
+  mutate(hw_time = 5 - bsbm25aa, score = math, course = "math") %>% 
+  filter(hw_time != 0) %>% 
+  select(hw_time, score, course) -> hwxperf_math
+
+hwxperf %>% 
+  filter(!is.na(bsbs25ab)) %>% 
+  mutate(hw_time = 5 - bsbs25ab, score = science, course = "sci") %>% 
+  filter(hw_time != 0) %>% 
+  select(hw_time, score, course) -> hwxperf_sci
+
+hwxperf = rbind(hwxperf_math, hwxperf_sci)
+
+ggplot(hwxperf, aes(x = factor(hw_time), y = score)) +
+  geom_boxplot(aes(fill = factor(course)), alpha = 0.3)
+
+hwxperf %>% group_by(hw_time) %>% summarise(score = mean(score)) -> hwxperf_plot
+hchart(hwxperf_plot, "bar", hcaes(x = hw_time, y = score))
+ggplot(hwxperf_plot, aes(x = factor(hw_time), y = score)) +
+  geom_bar(stat = "identity", alpha = 0.5, fill = "dark blue")
+
+cor.test(hwxperf$score, hwxperf$hw_time)
+
+hwxperf %>% filter(hw_time == 1 | hw_time == 4) -> hwxperf
+t.test(score ~ hw_time, hwxperf, alt = "greater")
+```
+
+
+<p dir="RTL">
+اگر کسانی را که هیچگاه تمرین ندارند در نظر نگیریم، همانطور که در نمودارها نیز پیداست، افزایش تعداد تمرین در هفته نتیجهی عکس میدهد. اول با استفاده از cor.test بررسی میکنیم که آیا این دو عامل روی هم تاثیر دارند یا خیر. سپس دو نمونه از این چهار نمونه را باهم مقایسه میکنیم و میبینیم که گزارهی گفته شده صحیح است.
+</p>
+

@@ -1,0 +1,313 @@
+---
+title: "Create Map"
+subtitle: "Earthquake Analysis"
+author: "Kimia Hamidieh (95109434)"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+<div align="center">
+<img  src="images/eqs003-001-2.png"  align = 'center'>
+</div>
+
+> <p dir="RTL"> 
+با استفاده از داده های زلزله ها در ایران و جهان به سوالات زیر پاسخ دهید.
+</p>
+
+```{r message=FALSE, include=FALSE, error=FALSE}
+library(readr)
+library(ggplot2)
+library(ggmap)
+library(highcharter)
+library(dplyr)
+library(tidyr)
+library(leaflet)
+library(ggthemes)
+library(stringr)
+library(gganimate)
+library(sp)
+library(rworldmap)
+```
+
+
+***
+
+<p dir="RTL">
+۱. با استفاده از داده های
+historical_web_data_26112015.rds 
+و استفاده از نمودار پراکنش سه بعدی بسته plotly نمودار طول، عرض و عمق زلزله ها را رسم نمایید. علاوه بر آن بزرگی هر نقطه را برابر بزرگی زمین لرزه قرار دهید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+sequake = read_rds("data/historical_web_data_26112015.rds")
+disaster = read_delim("data/disaster.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+library(plotly)
+plot_ly(sequake, x = ~Longitude, y = ~Latitude, z = ~-Depth, size = ~Magnitude)
+```
+
+
+***
+
+<p dir="RTL">
+۲. پویانمایی سونامی های تاریخی را بر حسب شدت بر روی نقشه زمین رسم نمایید.(از داده زلزله های بزرگ استفاده نمایید.)
+</p>
+
+saved as map.gif
+
+```{r message=FALSE, warning=FALSE, echo=TRUE, eval=FALSE}
+world = map_data("world")
+p = ggplot(data = disaster, aes(x = LONGITUDE, y = LATITUDE)) +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group), fill = "grey", color = "lightblue") +
+  geom_point(color = "dodger blue", alpha = 0.7, aes(frame = YEAR))
+gganimate(p)
+```
+
+
+***
+
+<p dir="RTL">
+۳. نمودار چگالی دو بعدی زلزله های تاریخی ایران را رسم کنید.( از داده iran_earthquake.rds و لایه stat_density_2d استفاده نمایید).
+</p>
+
+```{r message=FALSE, warning=FALSE}
+iequake = read_rds("data/iran_earthquake.rds")
+
+IranMap = get_map("Iran", zoom = 5)
+ggmap(IranMap) +
+  stat_density_2d(data = iequake, mapping = aes(x = Long, y = Lat, fill = ..level..), 
+                  geom = "polygon", show.legend = FALSE)
+
+```
+
+
+***
+
+<p dir="RTL">
+۴. احتمال اینکه در ایران در پنج سال آینده زلزله به بزرگی هفت ریشتر رخ دهد را محاسبه کنید. (از احتمال شرطی استفاده کنید.)
+</p>
+
+<p dir="RTL"> 
+اگر بخواهیم از احتمال شرطی استفاده کنیم، شرایط فعلی (یعنی اینکه زلزلههای بیش از ۷ ریشتر کی رخ داده است) شرط و احتمال اینکه در پنج سال آینده زلزلهای به این بزرگی بیاید احتمالی که میخواهیم حساب کنیم است. پس این احتمال را در فضای شرایط فعلی استفاده میکنیم.
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+# last earth quake that happened in iran
+disaster %>% 
+  select(COUNTRY, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, intensity = EQ_PRIMARY) %>%
+  filter(COUNTRY == "IRAN") %>% 
+  filter(intensity >= 7) -> high_equake
+
+high_equake %>% 
+  arrange(desc(YEAR)) %>% 
+  head(1)
+```
+
+<p dir="RTL"> 
+حال آخرین زلزله بزرگ در ۲۰۱۷ بوده که یعنی یک سال پیش. (شرایط فعلی)
+پس باید این احتمال را حساب کنیم که در پنج سال آینده زلزله میآید و در یک سال قبلی نیامده است.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+high_equake %>% 
+  arrange(YEAR, MONTH, DAY, HOUR, MINUTE, SECOND) %>% 
+  mutate(year_dif = lead(YEAR) - YEAR) %>% 
+  filter(year_dif > 1) -> current # fazaye feli
+
+current %>% 
+  filter(year_dif <= 5) -> intersection
+
+# probability
+nrow(intersection) / nrow(current)
+```
+
+***
+
+<p dir="RTL">
+۵. بر اساس داده های زلزله های بزرگ ابتدا تعداد و متوسط کشته زلزله ها را بر حسب کشور استخراج نمایید. سپس نمودار گرمایی تعداد کشته ها را بر روی کره زمین رسم نمایید.(مانند مثال زیر!)
+</p>
+
+<div align="center">
+<img  src="images/jvector.png"  align = 'center'>
+</div>
+
+```{r message=FALSE, warning=FALSE}
+disaster %>% 
+  group_by(COUNTRY) %>% 
+  summarise(mean_deaths = mean(DEATHS, na.rm = T), n = n()) %>% 
+  mutate(region = tolower(COUNTRY)) -> dis_country
+
+world = map_data("world") %>% mutate(region = tolower(region))
+
+world_deaths = inner_join(world, dis_country, by = "region")
+
+ggplot() +
+  geom_polygon(data = world_deaths, 
+               mapping = aes(x = long, y = lat, group = group, fill = log10(mean_deaths))) +
+  ggtitle("Mean of Deaths") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_fixed(1.3)
+
+ggplot() +
+  geom_polygon(data = world_deaths, 
+               mapping = aes(x = long, y = lat, group = group, fill = log10(n))) +
+  ggtitle("Number of Deaths") +
+  xlab("Longitude") + ylab("Latitude") +
+  coord_fixed(1.3)
+```
+
+***
+
+<p dir="RTL">
+۶. با استفاده از داده لرزه های بزرگ و به وسیله طول، عرض، شدت، عمق مدلی برای پیش بینی تعداد کشته های زلزله بیابید.
+</p>
+
+```{r message=FALSE, warning=FALSE}
+disaster %>%
+  select(LONGITUDE, LATITUDE, INTENSITY, FOCAL_DEPTH, DEATHS) %>% 
+  drop_na() -> pred_deaths
+
+model = glm(DEATHS ~ . , data = pred_deaths)
+summary(model)
+```
+
+***
+
+<p dir="RTL">
+۷. با استفاده از داده worldwide.csv به چند سوال زیر پاسخ دهید. تحقیق کنید آیا می توان از پیش لرزه، زلزله اصلی را پیش بینی کرد؟
+</p>
+
+<p dir="RTL"> 
+فرض میکنیم پیش لرزه و زلزله اصلی در یک روز اتفاق میافتند. همچنین زلزله اصلی بزرگترین بوده و همه زلزله های قبل از آن در همان روز پیش لرزه محسوب میشوند.
+</p>
+
+
+
+```{r message=FALSE, warning=FALSE}
+worldwide = read_csv("data/worldwide.csv")
+worldwide %>% 
+  mutate(date = as.Date(time)) %>% 
+  mutate(time = as.POSIXct(time)) %>%
+  select(place, date, pre_mag = mag, pre_time = time) %>% 
+  group_by(place, date) %>% 
+  mutate(count = n()) %>% 
+  filter(count > 1) -> pres
+
+pres %>% 
+  group_by(place, date) %>% 
+  slice(which.max(pre_mag)) %>% 
+  plyr::rename(c("pre_mag" = "main_mag", "pre_time" = "main_time")) -> mains
+
+equakes = full_join(pres, mains, by = c("place", "date")) %>% 
+  filter(main_time > pre_time)
+
+model = lm(data = equakes, formula = main_mag ~ pre_mag)
+summary(model)
+```
+
+***
+
+<p dir="RTL">
+۸. گزاره " آیا شدت زلزله به عمق آن بستگی دارد" را تحقیق کنید؟ (طبیعتا از آزمون فرض باید استفاده کنید.)
+</p>
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = worldwide, mapping = aes(x = depth, y = mag)) +
+  geom_point(color = "dark grey", alpha = .3) +
+  geom_smooth()
+
+cor.test(worldwide$mag, worldwide$depth, method = "spearman")
+```
+
+<p dir="RTL"> 
+با توجه به p-value میتوان به این نتیجه رسید که این دو به هم مربوطند.
+</p>
+
+
+***
+
+<p dir="RTL"> 
+۹. میانگین سالانه زلزله ها را بر حسب کشور به دست آورید. آیا میتوان دلیلی در تایید یا رد تئوری هارپ ارائه کرد.
+</p>
+
+<p dir="RTL"> 
+تئوری هارپ به طور کلی این را بیان میکند که در سال های اخیر، تعداد زلزلهها و میانگین شدت آنها بیشتر شده است. 
+</p>
+
+
+<p dir="RTL"> 
+در اینجا با استفاده از طول و عرض محل زلزله، کشور را پیشبینی میکنیم. (چرا که در داده worldwide.csv این اطلاعات موجود نبود.)
+</p>
+
+
+```{r message=FALSE, warning=FALSE}
+long_lat = worldwide %>% select(longitude, latitude)
+countries = getMap(resolution = 'low')
+points = SpatialPoints(long_lat, proj4string = CRS(proj4string(countries)))  
+info = over(points, countries)
+worldwide %>% 
+  mutate(country = info$ADMIN) -> worldwide
+
+worldwide %>% 
+  filter(!is.na(country)) %>%
+  mutate(year = format(as.Date(time), format="%Y")) %>%
+  group_by(country, year) %>% 
+  summarise(equakes_number = n(), average_mag = mean(mag, na.rm = TRUE)) -> avg_num
+
+summary.aov(aov(data = avg_num, equakes_number ~ year))
+
+summary.aov(aov(data = avg_num, average_mag ~ year))
+```
+
+<p dir="RTL"> 
+حال با توجه به p-value به دست آمده میتوان گفت که نمیتوان فرض متفاوت بودن تعداد و شدت زلزلهها را رد کرد و بنابراین این تئوری ثابت نمیشود.
+</p>
+
+
+***
+
+<p dir="RTL"> 
+۱۰. سه حقیقت جالب در مورد زلزله بیابید.
+</p>
+
+<p dir="RTL"> 
+پیشبینی magNst موجود در داده. 
+(فقط به mag و nst بستگی ندارد و با اضافه کردن ستون های خطا، تغییر بسیار زیادی میکند.)
+</p>
+
+```{r message=FALSE, warning=FALSE}
+summary(lm(data = worldwide, magNst ~ mag + nst + horizontalError + depthError + magError))
+```
+
+
+
+<p dir="RTL"> 
+انواع زلزله با اینکه این زلزله ها منشع یکسانی دارند، در شدت مشابه نیستند.
+</p>
+
+
+
+```{r message=FALSE, warning=FALSE}
+summary.aov(aov(data = worldwide, mag ~ type))
+```
+
+
+<p dir="RTL"> 
+کشورهایی هستند با وجود پیشرفته بودن، آمادگی زلزله را ندارند و بنابراین فاجعه بزرگی با زلزلهی نسبتا متوسطی رخ میدهد.
+</p>
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+world = map_data("world")
+disaster %>% 
+  select(LONGITUDE, LATITUDE, DAMAGE_MILLIONS_DOLLARS, EQ_PRIMARY) %>% 
+  drop_na() -> dis
+ggplot(data = dis, aes(x = LONGITUDE, y = LATITUDE)) +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group), fill = "grey", color = "lightblue") +
+  geom_point(alpha = 0.5, aes(size = DAMAGE_MILLIONS_DOLLARS %>% as.numeric(), color = EQ_PRIMARY), show.legend = FALSE) 
+```
+
